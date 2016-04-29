@@ -1,6 +1,6 @@
 Source: libcolumnfile
 Priority: optional
-Maintainer: Morten Hustveit <morte.hustveit@gmail.com>
+Maintainer: Morten Hustveit <morten.hustveit@gmail.com>
 Build-Depends: debhelper (>=9), autotools-dev, libcapnp-dev, libsnappy-dev, liblz4-dev, liblzma-dev, zlib1g-dev
 Standards-Version: 3.9.6
 Section: libs
