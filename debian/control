@@ -1,0 +1,20 @@
+Source: libcolumnfile
+Priority: optional
+Maintainer: Morten Hustveit <morte.hustveit@gmail.com>
+Build-Depends: debhelper (>=9), autotools-dev, libcapnp-dev, libsnappy-dev, liblz4-dev, liblzma-dev, zlib1g-dev
+Standards-Version: 3.9.6
+Section: libs
+Homepage: https://github.com/mortehu/libcolumnfile/
+
+Package: libcolumnfile-dev
+Section: libdevel
+Architecture: any
+Depends: libcolumnfileBROKEN (= ${binary:Version}), ${misc:Depends}
+Description: Columnar file library (development files)
+ Columnar files
+
+Package: libcolumnfile0
+Architecture: any
+Depends: ${shlibs:Depends}, ${misc:Depends}
+Description: Columnar file library
+ Columnar files

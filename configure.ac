@@ -1,0 +1,27 @@
+AC_INIT([libcolumnfile], [1.0.0])
+AM_INIT_AUTOMAKE([-Wall foreign subdir-objects])
+
+AC_CONFIG_MACRO_DIR([m4])
+
+AM_MAINTAINER_MODE([disable])
+
+m4_ifdef([AM_SILENT_RULES], [AM_SILENT_RULES([yes])])
+
+PKG_CHECK_MODULES([CAPNP], [capnp >= 0.5])
+PKG_CHECK_MODULES([LIBLZ4], [liblz4])
+PKG_CHECK_MODULES([LIBLZMA], [liblzma])
+PKG_CHECK_MODULES([ZLIB], [zlib])
+
+AM_PROG_AR
+AC_PROG_CXX
+AC_PROG_INSTALL
+AC_PROG_MAKE_SET
+
+LT_INIT
+
+AC_LANG_PUSH([C++])
+AX_CXX_COMPILE_STDCXX_14([], [])
+AC_LANG_POP([C++])
+
+AC_CONFIG_FILES([Makefile libcolumnfile.pc])
+AC_OUTPUT
