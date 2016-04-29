@@ -9,7 +9,7 @@ Homepage: https://github.com/mortehu/libcolumnfile/
 Package: libcolumnfile-dev
 Section: libdevel
 Architecture: any
-Depends: libcolumnfileBROKEN (= ${binary:Version}), ${misc:Depends}
+Depends: libcolumnfile0 (= ${binary:Version}), ${misc:Depends}
 Description: Columnar file library (development files)
  Columnar files
 
