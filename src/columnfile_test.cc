@@ -7,11 +7,11 @@
 
 #include <capnp/schema-parser.h>
 #include <capnp/serialize.h>
-#include <gtest/gtest.h>
 
 #include "columnfile-capnp.h"
 #include "columnfile-internal.h"
 #include "columnfile.h"
+#include "third_party/gtest/gtest.h"
 
 using namespace cantera;
 
