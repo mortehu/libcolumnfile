@@ -1,5 +1,7 @@
 #include "columnfile-internal.h"
 
+#include <deque>
+
 #include <kj/common.h>
 #include <kj/debug.h>
 #include <zlib.h>
@@ -32,8 +34,7 @@ uint32_t CombineAdler32(const uint32_t adler1, const uint32_t adler2,
 namespace cantera {
 namespace columnfile_internal {
 
-void CompressZLIB(std::string& output, const string_view& input,
-                  ThreadPool& thread_pool) {
+void CompressZLIB(std::string& output, const string_view& input) {
   static const size_t kBlockSize = 512 * 1024;
   static const auto kCompressionLevel = Z_DEFAULT_COMPRESSION;
 
@@ -64,7 +65,7 @@ void CompressZLIB(std::string& output, const string_view& input,
                                 std::get<size_t>(block));
     }
 
-    queue.emplace_back(thread_pool.Launch([block_data, finish] {
+    queue.emplace_back(std::async(std::launch::async, [block_data, finish] {
       z_stream zs;
       memset(&zs, 0, sizeof(zs));
 

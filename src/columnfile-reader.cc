@@ -292,8 +292,6 @@ struct ColumnFileReader::Impl {
     uint32_t repeat_ = 0;
   };
 
-  std::unique_ptr<cantera::columnfile_internal::ThreadPool> thread_pool;
-
   std::unique_ptr<ColumnFileInput> input;
 
   std::unordered_set<uint32_t> column_filter;
@@ -597,14 +595,11 @@ void ColumnFileReader::Fill(bool next) {
   KJ_ASSERT(!fields.empty());
 
   if (pimpl_->compression == kColumnFileCompressionLZMA) {
-    if (!pimpl_->thread_pool)
-      pimpl_->thread_pool = std::make_unique<ThreadPool>();
-
     std::vector<std::pair<uint32_t, std::future<Impl::FieldReader>>>
         future_fields;
 
     for (auto& field : fields) {
-      future_fields.emplace_back(field.first, pimpl_->thread_pool->Launch([
+      future_fields.emplace_back(field.first, std::async(std::launch::async, [
         this, data = std::move(field.second)
       ]() mutable {
         Impl::FieldReader result(std::move(data), pimpl_->compression);

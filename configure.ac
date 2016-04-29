@@ -1,4 +1,4 @@
-AC_INIT([libcolumnfile], [1.0.0])
+AC_INIT([libcolumnfile], [1.0.1])
 AM_INIT_AUTOMAKE([-Wall foreign subdir-objects])
 
 AC_CONFIG_MACRO_DIR([m4])

@@ -1,5 +1,5 @@
-#ifndef BASE_COLUMNFILE_CAPNP_H_
-#define BASE_COLUMNFILE_CAPNP_H_ 1
+#ifndef CANTERA_COLUMNFILE_CAPNP_H_
+#define CANTERA_COLUMNFILE_CAPNP_H_ 1
 
 #include <capnp/dynamic.h>
 
@@ -15,4 +15,4 @@ void ReadMessageFromColumnFile(ColumnFileReader& input,
 
 }  // namespace cantera
 
-#endif  // !BASE_COLUMNFILE_CAPNP_H_
+#endif  // !CANTERA_COLUMNFILE_CAPNP_H_

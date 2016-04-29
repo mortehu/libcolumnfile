@@ -1,3 +1,10 @@
+libcolumnfile (1.0.1-1) unstable; urgency=medium
+
+  * Fixed some packaging issues.
+  * Remove Delegate class with questionable license.
+
+ -- Morten Hustveit <morten.hustveit@gmail.com>  Fri, 29 Apr 2016 12:50:38 -0400
+
 libcolumnfile (1.0.0-1) unstable; urgency=medium
 
   * Initial release

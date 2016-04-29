@@ -116,8 +116,7 @@ struct ColumnFileWriter::Impl {
 
     void Flush();
 
-    void Finalize(ColumnFileCompression compression,
-                  cantera::columnfile_internal::ThreadPool& thread_pool);
+    void Finalize(ColumnFileCompression compression);
 
     string_view Data() const { return data_; }
 
@@ -131,8 +130,6 @@ struct ColumnFileWriter::Impl {
 
     unsigned int shared_prefix_ = 0;
   };
-
-  std::unique_ptr<cantera::columnfile_internal::ThreadPool> thread_pool;
 
   std::shared_ptr<ColumnFileOutput> output;
 
@@ -218,14 +215,11 @@ size_t ColumnFileWriter::PendingSize() const { return pimpl_->pending_size; }
 void ColumnFileWriter::Flush() {
   if (pimpl_->fields.empty()) return;
 
-  if (!pimpl_->thread_pool)
-    pimpl_->thread_pool = std::make_unique<ThreadPool>();
-
   std::vector<std::pair<uint32_t, string_view>> field_data;
   field_data.reserve(pimpl_->fields.size());
 
   for (auto& field : pimpl_->fields) {
-    field.second.Finalize(pimpl_->compression, *pimpl_->thread_pool.get());
+    field.second.Finalize(pimpl_->compression);
     field_data.emplace_back(field.first, field.second.Data());
   }
 
@@ -306,8 +300,7 @@ void ColumnFileWriter::Impl::FieldWriter::Flush() {
 }
 
 void ColumnFileWriter::Impl::FieldWriter::Finalize(
-    ColumnFileCompression compression,
-    cantera::columnfile_internal::ThreadPool& thread_pool) {
+    ColumnFileCompression compression) {
   Flush();
 
   switch (compression) {
@@ -372,7 +365,7 @@ void ColumnFileWriter::Impl::FieldWriter::Finalize(
       std::string compressed_data;
       PutUInt(compressed_data, data_.size());
 
-      CompressZLIB(compressed_data, data_, thread_pool);
+      CompressZLIB(compressed_data, data_);
 
       data_.swap(compressed_data);
     } break;

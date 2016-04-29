@@ -1,7 +1,7 @@
 noinst_LIBRARIES =
 lib_LTLIBRARIES = libcolumnfile.la
 check_PROGRAMS = src/columnfile_test
-include_HEADERS = src/columnfile.h
+include_HEADERS = src/columnfile.h src/columnfile-capnp.h
 
 pkgconfigdir = $(libdir)/pkgconfig
 pkgconfig_DATA = libcolumnfile.pc
@@ -20,7 +20,6 @@ include third_party/gtest/Makefile.am
 
 libcolumnfile_la_SOURCES = \
   src/columnfile-capnp.cc \
-  src/columnfile-capnp.h \
   src/columnfile-internal.h \
   src/columnfile-reader.cc \
   src/columnfile-select.cc \
