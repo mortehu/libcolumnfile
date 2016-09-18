@@ -24,7 +24,9 @@ class ColumnFileFdInput : public ColumnFileInput {
  public:
   ColumnFileFdInput(kj::AutoCloseFd fd)
       : fd_{std::move(fd)}, input_{fd_.get()} {
+#ifdef POSIX_FADV_SEQUENTIAL
     (void)posix_fadvise(fd_, 0, 0, POSIX_FADV_SEQUENTIAL);
+#endif
 
     char magic[sizeof(kMagic)];
     input_.tryRead(magic, sizeof(kMagic), sizeof(kMagic));
