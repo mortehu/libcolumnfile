@@ -4,6 +4,7 @@ export DH_VERBOSE = 1
 
 # see FEATURE AREAS in dpkg-buildflags(1)
 export DEB_BUILD_MAINT_OPTIONS = hardening=+all
+export DEB_CXXFLAGS_MAINT_APPEND = -O3
 
 %:
 	dh $@ --parellel
