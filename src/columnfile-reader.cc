@@ -528,7 +528,7 @@ void ColumnFileReader::Impl::FieldReader::Fill() {
       zs.next_out = reinterpret_cast<uint8_t*>(decompressed_data.begin());
       zs.avail_out = decompressed_size;
 
-      const auto inflate_ret = inflate(&zs, LZMA_FINISH);
+      const auto inflate_ret = inflate(&zs, Z_FINISH);
       KJ_REQUIRE(Z_STREAM_END == inflate_ret, inflate_ret, zs.avail_in,
                  zs.total_in, zs.msg);
 
