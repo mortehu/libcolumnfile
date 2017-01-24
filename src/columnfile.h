@@ -12,6 +12,49 @@
 #include <kj/array.h>
 #include <kj/io.h>
 
+// # Variable length integer encoding
+//
+// Numbers are split into 6-bit chunks, with a final 7-bit chunk.  In all bytes
+// except the final byte, the most significant bit is set to 1, and the second
+// most significant bit is set to 0.
+//
+//   0x000000..0x000007f 0xxxxxxx
+//   0x000080..0x0001fff 10xxxxxx 0xxxxxxx
+//   0x002000..0x0080000 10xxxxxx 10xxxxxx 0xxxxxxx
+//   etc.
+//
+// # Value encoding
+//
+//   Variable length integer: How many times the value should be repeated.
+//
+//   Variable length integer: Reserved; the parser must abort if this is not zero.
+//
+//   Byte:                    Control; multiple meanings:
+//
+//                              0xff:       Null
+//                              0xc0..0xfe: Copy prefix from previous value.
+//                                          Length: Control - 0xbe.
+//                              0x00..0xbf: Byte is part of next field.
+//
+//   Variable length integer: Length of value (after any copied prefix).
+//
+// If the values are lexicographically sorted, omitting repeated prefixes
+// can lead to significant storage savings.  For example:
+//
+//   http://www.example.org/abc.html
+//   http://www.example.org/image.jpeg
+//   http://www.example.org/image.png
+//
+// becomes:
+//
+//   http://www.example.org/abc.html
+//   [23]image.jpeg
+//   [29].png
+//
+// # Chunk encoding
+//
+// Chunks are just repeated values.
+
 namespace cantera {
 
 using string_view = std::experimental::string_view;
@@ -168,7 +211,8 @@ class ColumnFileReader {
   // Returns the current value for the given column.
   const string_view* Peek(uint32_t field);
 
-  // Returns the current value for the given column and advanced its read pointer.
+  // Returns the current value for the given column and advanced its read
+  // pointer.
   const string_view* Get(uint32_t field);
 
   const std::vector<std::pair<uint32_t, optional_string_view>>& GetRow();
