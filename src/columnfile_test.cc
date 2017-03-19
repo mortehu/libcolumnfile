@@ -52,71 +52,81 @@ TEST_F(ColumnFileTest, WriteTableToFile) {
   const auto tmp_dir = TemporaryDirectory();
   KJ_DEFER(rmdir(tmp_dir.c_str()));
 
-  const auto tmp_path = kj::str(tmp_dir, "/test00");
-  ColumnFileWriter writer(
-      OpenFile(tmp_path.cStr(), O_WRONLY | O_CREAT | O_TRUNC));
-  KJ_DEFER(unlink(tmp_path.cStr()));
+  const ColumnFileCompression compression_methods[] = {
+      kColumnFileCompressionNone, kColumnFileCompressionSnappy,
+      kColumnFileCompressionLZ4,  kColumnFileCompressionLZMA,
+      kColumnFileCompressionZLIB,
+  };
 
-  writer.Put(0, "2000-01-01");
-  writer.Put(1, "January");
-  writer.Put(2, "First");
+  for (const auto compression_method : compression_methods) {
+    const auto tmp_path = kj::str(tmp_dir, "/test00");
+    ColumnFileWriter writer(
+        OpenFile(tmp_path.cStr(), O_WRONLY | O_CREAT | O_TRUNC));
+    KJ_DEFER(unlink(tmp_path.cStr()));
 
-  writer.Put(0, "2000-01-02");
-  writer.Put(1, "January");
-  writer.Put(2, "Second");
+    writer.SetCompression(compression_method);
 
-  writer.Put(0, "2000-02-02");
-  writer.Put(1, "February");
-  writer.Put(2, "Second");
-  writer.Flush();
+    writer.Put(0, "2000-01-01");
+    writer.Put(1, "January");
+    writer.Put(2, "First");
 
-  writer.Put(0, "2000-02-03");
-  writer.Put(1, "February");
-  writer.Put(2, "Third");
+    writer.Put(0, "2000-01-02");
+    writer.Put(1, "January");
+    writer.Put(2, "Second");
 
-  writer.Put(0, "2000-02-03");
-  writer.PutNull(1);
-  writer.PutNull(2);
+    writer.Put(0, "2000-02-02");
+    writer.Put(1, "February");
+    writer.Put(2, "Second");
+    writer.Flush();
 
-  writer.Finalize();
+    writer.Put(0, "2000-02-03");
+    writer.Put(1, "February");
+    writer.Put(2, "Third");
 
-  ColumnFileReader reader(OpenFile(tmp_path.cStr(), O_RDONLY));
+    writer.Put(0, "2000-02-03");
+    writer.PutNull(1);
+    writer.PutNull(2);
 
-  ASSERT_FALSE(reader.End());
+    writer.Finalize();
 
-  auto row = reader.GetRow();
-  EXPECT_EQ(3U, row.size());
-  EXPECT_EQ("2000-01-01", row[0].second.value().to_string());
-  EXPECT_EQ("January", row[1].second.value().to_string());
-  EXPECT_EQ("First", row[2].second.value().to_string());
+    ColumnFileReader reader(OpenFile(tmp_path.cStr(), O_RDONLY));
 
-  row = reader.GetRow();
-  EXPECT_EQ(3U, row.size());
-  EXPECT_EQ("2000-01-02", row[0].second.value().to_string());
-  EXPECT_EQ("January", row[1].second.value().to_string());
-  EXPECT_EQ("Second", row[2].second.value().to_string());
+    ASSERT_FALSE(reader.End());
 
-  row = reader.GetRow();
-  EXPECT_EQ(3U, row.size());
-  EXPECT_EQ("2000-02-02", row[0].second.value().to_string());
-  EXPECT_EQ("February", row[1].second.value().to_string());
-  EXPECT_EQ("Second", row[2].second.value().to_string());
+    auto row = reader.GetRow();
+    EXPECT_EQ(3U, row.size());
+    EXPECT_EQ("2000-01-01", row[0].second.value().to_string());
+    EXPECT_EQ("January", row[1].second.value().to_string());
+    EXPECT_EQ("First", row[2].second.value().to_string());
 
-  row = reader.GetRow();
-  EXPECT_EQ(3U, row.size());
-  EXPECT_EQ("2000-02-03", row[0].second.value().to_string());
-  EXPECT_EQ("February", row[1].second.value().to_string());
-  EXPECT_EQ("Third", row[2].second.value().to_string());
+    row = reader.GetRow();
+    EXPECT_EQ(3U, row.size());
+    EXPECT_EQ("2000-01-02", row[0].second.value().to_string());
+    EXPECT_EQ("January", row[1].second.value().to_string());
+    EXPECT_EQ("Second", row[2].second.value().to_string());
 
-  EXPECT_FALSE(reader.End());
+    row = reader.GetRow();
+    EXPECT_EQ(3U, row.size());
+    EXPECT_EQ("2000-02-02", row[0].second.value().to_string());
+    EXPECT_EQ("February", row[1].second.value().to_string());
+    EXPECT_EQ("Second", row[2].second.value().to_string());
 
-  row = reader.GetRow();
-  EXPECT_EQ(3U, row.size());
-  EXPECT_EQ("2000-02-03", row[0].second.value().to_string());
-  EXPECT_FALSE(row[1].second);
-  EXPECT_FALSE(row[2].second);
+    row = reader.GetRow();
+    EXPECT_EQ(3U, row.size());
+    EXPECT_EQ("2000-02-03", row[0].second.value().to_string());
+    EXPECT_EQ("February", row[1].second.value().to_string());
+    EXPECT_EQ("Third", row[2].second.value().to_string());
 
-  EXPECT_TRUE(reader.End());
+    EXPECT_FALSE(reader.End());
+
+    row = reader.GetRow();
+    EXPECT_EQ(3U, row.size());
+    EXPECT_EQ("2000-02-03", row[0].second.value().to_string());
+    EXPECT_FALSE(row[1].second);
+    EXPECT_FALSE(row[2].second);
+
+    EXPECT_TRUE(reader.End());
+  }
 }
 
 TEST_F(ColumnFileTest, WriteTableToString) {
