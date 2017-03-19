@@ -18,9 +18,11 @@
 // except the final byte, the most significant bit is set to 1, and the second
 // most significant bit is set to 0.
 //
-//   0x000000..0x000007f 0xxxxxxx
-//   0x000080..0x0001fff 10xxxxxx 0xxxxxxx
-//   0x002000..0x0080000 10xxxxxx 10xxxxxx 0xxxxxxx
+//   Range               | Binary representation
+//   --------------------+----------------------------
+//   0x000000..0x000007f | 0xxxxxxx
+//   0x000080..0x0001fff | 10xxxxxx 0xxxxxxx
+//   0x002000..0x0080000 | 10xxxxxx 10xxxxxx 0xxxxxxx
 //   etc.
 //
 // # Value encoding
