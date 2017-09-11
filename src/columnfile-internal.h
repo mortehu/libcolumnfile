@@ -5,10 +5,10 @@
 #include <cstdint>
 #include <cstdlib>
 #include <deque>
-#include <experimental/string_view>
 #include <future>
 #include <mutex>
 #include <string>
+#include <string_view>
 #include <thread>
 #include <vector>
 
@@ -28,7 +28,7 @@ enum Codes : uint8_t {
   kCodeNull = 0xff,
 };
 
-inline uint32_t GetUInt(std::experimental::string_view& input) {
+inline uint32_t GetUInt(std::string_view& input) {
   auto begin = input.data();
   auto i = begin;
   uint32_t b = *i++;
@@ -51,7 +51,7 @@ done:
   return result;
 }
 
-inline int32_t GetInt(std::experimental::string_view& input) {
+inline int32_t GetInt(std::string_view& input) {
   const auto u = GetUInt(input);
   return (u >> 1) ^ -((int32_t)(u & 1));
 }
@@ -86,7 +86,7 @@ inline void PutInt(std::string& output, int32_t value) {
   PutUInt(output, (value << 1) ^ (value >> sign_shift));
 }
 
-void CompressZLIB(std::string& output, const string_view& input);
+void CompressZLIB(std::string& output, const std::string_view& input);
 
 }  // namespace columnfile_internal
 }  // namespace cantera

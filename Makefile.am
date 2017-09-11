@@ -16,6 +16,7 @@ AM_CPPFLAGS = \
   $(LIBLZMA_CFLAGS) \
   $(ZLIB_CFLAGS)
 AM_LDFLAGS = -lpthread
+AM_CXXFLAGS = -std=c++17
 
 include third_party/gtest/Makefile.am
 

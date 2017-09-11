@@ -34,7 +34,7 @@ uint32_t CombineAdler32(const uint32_t adler1, const uint32_t adler2,
 namespace cantera {
 namespace columnfile_internal {
 
-void CompressZLIB(std::string& output, const string_view& input) {
+void CompressZLIB(std::string& output, const std::string_view& input) {
   static const size_t kBlockSize = 512 * 1024;
   static const auto kCompressionLevel = Z_DEFAULT_COMPRESSION;
 

@@ -1,9 +1,7 @@
-AC_INIT([libcolumnfile], [1.0.2])
+AC_INIT([libcolumnfile], [1.1.0])
 AM_INIT_AUTOMAKE([-Wall foreign subdir-objects])
 
 AC_CONFIG_MACRO_DIR([m4])
-
-AM_MAINTAINER_MODE([disable])
 
 m4_ifdef([AM_SILENT_RULES], [AM_SILENT_RULES([yes])])
 
@@ -18,10 +16,6 @@ AC_PROG_INSTALL
 AC_PROG_MAKE_SET
 
 LT_INIT
-
-AC_LANG_PUSH([C++])
-AX_CXX_COMPILE_STDCXX_14([], [])
-AC_LANG_POP([C++])
 
 AC_CONFIG_FILES([Makefile libcolumnfile.pc])
 AC_OUTPUT

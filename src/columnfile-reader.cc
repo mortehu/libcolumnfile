@@ -68,7 +68,7 @@ class ColumnFileFdInput : public ColumnFileInput {
 
   std::string buffer_;
 
-  string_view data_;
+  std::string_view data_;
 
   kj::AutoCloseFd fd_;
   kj::FdInputStream input_;
@@ -82,7 +82,7 @@ class ColumnFileFdInput : public ColumnFileInput {
 
 class ColumnFileStringInput : public ColumnFileInput {
  public:
-  ColumnFileStringInput(string_view data) : input_data_(data) {
+  ColumnFileStringInput(std::string_view data) : input_data_(data) {
     KJ_REQUIRE(input_data_.size() >= sizeof(kMagic));
     KJ_REQUIRE(!memcmp(input_data_.begin(), kMagic, sizeof(kMagic)));
     input_data_.remove_prefix(sizeof(kMagic));
@@ -112,8 +112,8 @@ class ColumnFileStringInput : public ColumnFileInput {
     uint32_t size;
   };
 
-  string_view input_data_;
-  string_view data_;
+  std::string_view input_data_;
+  std::string_view data_;
 
   std::vector<FieldMeta> field_meta_;
 };
@@ -262,7 +262,7 @@ struct ColumnFileReader::Impl {
 
     bool End() const { return !repeat_ && data_.empty(); }
 
-    const string_view* Peek() {
+    const std::string_view* Peek() {
       if (!repeat_) {
         KJ_ASSERT(!data_.empty());
         Fill();
@@ -272,7 +272,7 @@ struct ColumnFileReader::Impl {
       return value_is_null_ ? nullptr : &value_;
     }
 
-    const string_view* Get() {
+    const std::string_view* Get() {
       auto result = Peek();
       --repeat_;
       return result;
@@ -283,11 +283,11 @@ struct ColumnFileReader::Impl {
    private:
     kj::Array<const char> buffer_;
 
-    string_view data_;
+    std::string_view data_;
 
     ColumnFileCompression compression_;
 
-    string_view value_;
+    std::string_view value_;
     bool value_is_null_ = true;
     uint32_t array_size_ = 0;
 
@@ -311,7 +311,7 @@ std::unique_ptr<ColumnFileInput> ColumnFileReader::FileDescriptorInput(
 }
 
 std::unique_ptr<ColumnFileInput> ColumnFileReader::StringInput(
-    string_view data) {
+    std::string_view data) {
   return std::make_unique<ColumnFileStringInput>(data);
 }
 
@@ -325,7 +325,7 @@ ColumnFileReader::ColumnFileReader(kj::AutoCloseFd fd)
   pimpl_->input = std::make_unique<ColumnFileFdInput>(std::move(fd));
 }
 
-ColumnFileReader::ColumnFileReader(string_view input)
+ColumnFileReader::ColumnFileReader(std::string_view input)
     : pimpl_{std::make_unique<Impl>()} {
   pimpl_->input = std::make_unique<ColumnFileStringInput>(input);
 }
@@ -357,7 +357,7 @@ bool ColumnFileReader::EndOfSegment() {
   return true;
 }
 
-const string_view* ColumnFileReader::Peek(uint32_t field) {
+const std::string_view* ColumnFileReader::Peek(uint32_t field) {
   for (auto i = pimpl_->fields.begin(); i != pimpl_->fields.end();) {
     if (i->second.End())
       i = pimpl_->fields.erase(i);
@@ -373,7 +373,7 @@ const string_view* ColumnFileReader::Peek(uint32_t field) {
   return i->second.Peek();
 }
 
-const string_view* ColumnFileReader::Get(uint32_t field) {
+const std::string_view* ColumnFileReader::Get(uint32_t field) {
   for (auto i = pimpl_->fields.begin(); i != pimpl_->fields.end();) {
     if (i->second.End())
       i = pimpl_->fields.erase(i);
@@ -413,7 +413,7 @@ ColumnFileReader::GetRow() {
     if (data) {
       pimpl_->row_buffer.emplace_back(i->first, *data);
     } else {
-      pimpl_->row_buffer.emplace_back(i->first, nullopt);
+      pimpl_->row_buffer.emplace_back(i->first, std::nullopt);
     }
   }
 
@@ -459,12 +459,12 @@ void ColumnFileReader::Impl::FieldReader::Fill() {
                                        decompressed_data.begin()));
       buffer_ = std::move(decompressed_data);
 
-      data_ = string_view{buffer_.begin(), buffer_.size()};
+      data_ = std::string_view{buffer_.begin(), buffer_.size()};
       compression_ = kColumnFileCompressionNone;
     } break;
 
     case kColumnFileCompressionLZ4: {
-      string_view input(data_);
+      std::string_view input(data_);
       auto decompressed_size = GetUInt(input);
 
       auto decompressed_data = kj::heapArray<char>(decompressed_size);
@@ -476,12 +476,12 @@ void ColumnFileReader::Impl::FieldReader::Fill() {
 
       buffer_ = std::move(decompressed_data);
 
-      data_ = string_view{buffer_.begin(), buffer_.size()};
+      data_ = std::string_view{buffer_.begin(), buffer_.size()};
       compression_ = kColumnFileCompressionNone;
     } break;
 
     case kColumnFileCompressionLZMA: {
-      string_view input(data_);
+      std::string_view input(data_);
       auto decompressed_size = GetUInt(input);
 
       auto decompressed_data = kj::heapArray<char>(decompressed_size);
@@ -505,12 +505,12 @@ void ColumnFileReader::Impl::FieldReader::Fill() {
 
       buffer_ = std::move(decompressed_data);
 
-      data_ = string_view{buffer_.begin(), buffer_.size()};
+      data_ = std::string_view{buffer_.begin(), buffer_.size()};
       compression_ = kColumnFileCompressionNone;
     } break;
 
     case kColumnFileCompressionZLIB: {
-      string_view input(data_);
+      std::string_view input(data_);
       auto decompressed_size = GetUInt(input);
 
       auto decompressed_data = kj::heapArray<char>(decompressed_size);
@@ -537,7 +537,7 @@ void ColumnFileReader::Impl::FieldReader::Fill() {
 
       buffer_ = std::move(decompressed_data);
 
-      data_ = string_view{buffer_.begin(), buffer_.size()};
+      data_ = std::string_view{buffer_.begin(), buffer_.size()};
       compression_ = kColumnFileCompressionNone;
     } break;
 
@@ -573,14 +573,14 @@ void ColumnFileReader::Impl::FieldReader::Fill() {
         memmove(const_cast<char*>(data_.data()) - shared_prefix, value_.begin(),
                 shared_prefix);
 
-        value_ = string_view(data_.begin() - shared_prefix,
-                             shared_prefix + suffix_length);
+        value_ = std::string_view(data_.begin() - shared_prefix,
+                                  shared_prefix + suffix_length);
         data_.remove_prefix(suffix_length);
         value_is_null_ = false;
       }
     } else {
       auto value_size = GetUInt(data_);
-      value_ = string_view(data_.begin(), value_size);
+      value_ = std::string_view(data_.begin(), value_size);
       data_.remove_prefix(value_size);
       value_is_null_ = false;
     }

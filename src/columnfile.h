@@ -2,10 +2,11 @@
 #define CANTERA_COLUMNFILE_H_ 1
 
 #include <cstdint>
-#include <experimental/optional>
-#include <experimental/string_view>
+#include <functional>
 #include <map>
 #include <memory>
+#include <optional>
+#include <string_view>
 #include <unordered_set>
 #include <vector>
 
@@ -59,9 +60,7 @@
 
 namespace cantera {
 
-using string_view = std::experimental::string_view;
-using optional_string_view = std::experimental::optional<string_view>;
-constexpr auto nullopt = std::experimental::nullopt;
+using optional_string_view = std::optional<std::string_view>;
 
 enum ColumnFileCompression : uint32_t {
   // No compression.
@@ -96,7 +95,7 @@ class ColumnFileOutput {
   // The underlying storage backend needs to remember the compression method
   // used for each chunk.
   virtual void Flush(
-      const std::vector<std::pair<uint32_t, string_view>>& fields,
+      const std::vector<std::pair<uint32_t, std::string_view>>& fields,
       const ColumnFileCompression compression) = 0;
 
   // Finishes writing the file.  Returns the underlying file descriptor, if
@@ -107,7 +106,7 @@ class ColumnFileOutput {
 class ColumnFileWriter {
  public:
   static ColumnFileCompression StringToCompressingAlgorithm(
-      const string_view& name);
+      const std::string_view& name);
 
   explicit ColumnFileWriter(std::shared_ptr<ColumnFileOutput> output);
 
@@ -121,7 +120,7 @@ class ColumnFileWriter {
   void SetCompression(ColumnFileCompression c);
 
   // Inserts a value.
-  void Put(uint32_t column, const string_view& data);
+  void Put(uint32_t column, const std::string_view& data);
   void PutNull(uint32_t column);
 
   void PutRow(
@@ -178,7 +177,7 @@ class ColumnFileReader {
   static std::unique_ptr<ColumnFileInput> FileDescriptorInput(
       kj::AutoCloseFd fd);
 
-  static std::unique_ptr<ColumnFileInput> StringInput(string_view data);
+  static std::unique_ptr<ColumnFileInput> StringInput(std::string_view data);
 
   explicit ColumnFileReader(std::unique_ptr<ColumnFileInput> input);
 
@@ -187,7 +186,7 @@ class ColumnFileReader {
   explicit ColumnFileReader(kj::AutoCloseFd fd);
 
   // Reads a column file from memory.
-  explicit ColumnFileReader(string_view input);
+  explicit ColumnFileReader(std::string_view input);
 
   ColumnFileReader(ColumnFileReader&&);
 
@@ -211,11 +210,11 @@ class ColumnFileReader {
   bool EndOfSegment();
 
   // Returns the current value for the given column.
-  const string_view* Peek(uint32_t field);
+  const std::string_view* Peek(uint32_t field);
 
   // Returns the current value for the given column and advanced its read
   // pointer.
-  const string_view* Get(uint32_t field);
+  const std::string_view* Get(uint32_t field);
 
   const std::vector<std::pair<uint32_t, optional_string_view>>& GetRow();
 

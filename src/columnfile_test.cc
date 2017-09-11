@@ -17,8 +17,8 @@ using namespace cantera;
 
 namespace {
 
-inline bool HasSuffix(const cantera::string_view& haystack,
-                      const cantera::string_view& needle) {
+inline bool HasSuffix(const std::string_view& haystack,
+                      const std::string_view& needle) {
   if (haystack.size() < needle.size()) return false;
   return 0 == std::memcmp(haystack.data() + haystack.size() - needle.size(),
                           needle.data(), needle.size());
@@ -95,33 +95,33 @@ TEST_F(ColumnFileTest, WriteTableToFile) {
 
     auto row = reader.GetRow();
     EXPECT_EQ(3U, row.size());
-    EXPECT_EQ("2000-01-01", row[0].second.value().to_string());
-    EXPECT_EQ("January", row[1].second.value().to_string());
-    EXPECT_EQ("First", row[2].second.value().to_string());
+    EXPECT_EQ("2000-01-01", row[0].second.value());
+    EXPECT_EQ("January", row[1].second.value());
+    EXPECT_EQ("First", row[2].second.value());
 
     row = reader.GetRow();
     EXPECT_EQ(3U, row.size());
-    EXPECT_EQ("2000-01-02", row[0].second.value().to_string());
-    EXPECT_EQ("January", row[1].second.value().to_string());
-    EXPECT_EQ("Second", row[2].second.value().to_string());
+    EXPECT_EQ("2000-01-02", row[0].second.value());
+    EXPECT_EQ("January", row[1].second.value());
+    EXPECT_EQ("Second", row[2].second.value());
 
     row = reader.GetRow();
     EXPECT_EQ(3U, row.size());
-    EXPECT_EQ("2000-02-02", row[0].second.value().to_string());
-    EXPECT_EQ("February", row[1].second.value().to_string());
-    EXPECT_EQ("Second", row[2].second.value().to_string());
+    EXPECT_EQ("2000-02-02", row[0].second.value());
+    EXPECT_EQ("February", row[1].second.value());
+    EXPECT_EQ("Second", row[2].second.value());
 
     row = reader.GetRow();
     EXPECT_EQ(3U, row.size());
-    EXPECT_EQ("2000-02-03", row[0].second.value().to_string());
-    EXPECT_EQ("February", row[1].second.value().to_string());
-    EXPECT_EQ("Third", row[2].second.value().to_string());
+    EXPECT_EQ("2000-02-03", row[0].second.value());
+    EXPECT_EQ("February", row[1].second.value());
+    EXPECT_EQ("Third", row[2].second.value());
 
     EXPECT_FALSE(reader.End());
 
     row = reader.GetRow();
     EXPECT_EQ(3U, row.size());
-    EXPECT_EQ("2000-02-03", row[0].second.value().to_string());
+    EXPECT_EQ("2000-02-03", row[0].second.value());
     EXPECT_FALSE(row[1].second);
     EXPECT_FALSE(row[2].second);
 
@@ -162,33 +162,33 @@ TEST_F(ColumnFileTest, WriteTableToString) {
 
   auto row = reader.GetRow();
   EXPECT_EQ(3U, row.size());
-  EXPECT_EQ("2000-01-01", row[0].second.value().to_string());
-  EXPECT_EQ("January", row[1].second.value().to_string());
-  EXPECT_EQ("First", row[2].second.value().to_string());
+  EXPECT_EQ("2000-01-01", row[0].second.value());
+  EXPECT_EQ("January", row[1].second.value());
+  EXPECT_EQ("First", row[2].second.value());
 
   row = reader.GetRow();
   EXPECT_EQ(3U, row.size());
-  EXPECT_EQ("2000-01-02", row[0].second.value().to_string());
-  EXPECT_EQ("January", row[1].second.value().to_string());
-  EXPECT_EQ("Second", row[2].second.value().to_string());
+  EXPECT_EQ("2000-01-02", row[0].second.value());
+  EXPECT_EQ("January", row[1].second.value());
+  EXPECT_EQ("Second", row[2].second.value());
 
   row = reader.GetRow();
   EXPECT_EQ(3U, row.size());
-  EXPECT_EQ("2000-02-02", row[0].second.value().to_string());
-  EXPECT_EQ("February", row[1].second.value().to_string());
-  EXPECT_EQ("Second", row[2].second.value().to_string());
+  EXPECT_EQ("2000-02-02", row[0].second.value());
+  EXPECT_EQ("February", row[1].second.value());
+  EXPECT_EQ("Second", row[2].second.value());
 
   row = reader.GetRow();
   EXPECT_EQ(3U, row.size());
-  EXPECT_EQ("2000-02-03", row[0].second.value().to_string());
-  EXPECT_EQ("February", row[1].second.value().to_string());
-  EXPECT_EQ(long_string, row[2].second.value().to_string());
+  EXPECT_EQ("2000-02-03", row[0].second.value());
+  EXPECT_EQ("February", row[1].second.value());
+  EXPECT_EQ(long_string, row[2].second.value());
 
   EXPECT_FALSE(reader.End());
 
   row = reader.GetRow();
   EXPECT_EQ(3U, row.size());
-  EXPECT_EQ("2000-02-03", row[0].second.value().to_string());
+  EXPECT_EQ("2000-02-03", row[0].second.value());
   EXPECT_FALSE(row[1].second);
   EXPECT_FALSE(row[2].second);
 
@@ -296,7 +296,7 @@ TEST_F(ColumnFileTest, IntegerCoding) {
 
     EXPECT_TRUE((static_cast<uint8_t>(buffer[0]) & 0xc0) != 0xc0);
 
-    string_view read_buffer(buffer);
+    std::string_view read_buffer(buffer);
     auto decoded_int = cantera::columnfile_internal::GetInt(read_buffer);
     EXPECT_EQ(i, decoded_int);
     EXPECT_TRUE(read_buffer.empty());

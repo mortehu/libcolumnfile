@@ -22,7 +22,7 @@ class ColumnFileFdOutput : public ColumnFileOutput {
  public:
   ColumnFileFdOutput(kj::AutoCloseFd fd);
 
-  void Flush(const std::vector<std::pair<uint32_t, string_view>>& fields,
+  void Flush(const std::vector<std::pair<uint32_t, std::string_view>>& fields,
              const ColumnFileCompression compression) override;
 
   kj::AutoCloseFd Finalize() override { return std::move(fd_); }
@@ -38,7 +38,7 @@ class ColumnFileStringOutput : public ColumnFileOutput {
     if (output_.empty()) output_.append(kMagic, sizeof(kMagic));
   }
 
-  void Flush(const std::vector<std::pair<uint32_t, string_view>>& fields,
+  void Flush(const std::vector<std::pair<uint32_t, std::string_view>>& fields,
              const ColumnFileCompression compression) override;
 
   kj::AutoCloseFd Finalize() override { return nullptr; }
@@ -54,7 +54,7 @@ ColumnFileFdOutput::ColumnFileFdOutput(kj::AutoCloseFd fd)
 }
 
 void ColumnFileFdOutput::Flush(
-    const std::vector<std::pair<uint32_t, string_view>>& fields,
+    const std::vector<std::pair<uint32_t, std::string_view>>& fields,
     const ColumnFileCompression compression) {
   std::string buffer;
   buffer.resize(4, 0);
@@ -80,7 +80,7 @@ void ColumnFileFdOutput::Flush(
 }
 
 void ColumnFileStringOutput::Flush(
-    const std::vector<std::pair<uint32_t, string_view>>& fields,
+    const std::vector<std::pair<uint32_t, std::string_view>>& fields,
     const ColumnFileCompression compression) {
   std::string buffer;
   buffer.resize(4, 0);
@@ -110,7 +110,7 @@ void ColumnFileStringOutput::Flush(
 struct ColumnFileWriter::Impl {
   class FieldWriter {
    public:
-    void Put(const string_view& data);
+    void Put(const std::string_view& data);
 
     void PutNull();
 
@@ -118,7 +118,7 @@ struct ColumnFileWriter::Impl {
 
     void Finalize(ColumnFileCompression compression);
 
-    string_view Data() const { return data_; }
+    std::string_view Data() const { return data_; }
 
    private:
     std::string data_;
@@ -141,7 +141,7 @@ struct ColumnFileWriter::Impl {
 };
 
 ColumnFileCompression ColumnFileWriter::StringToCompressingAlgorithm(
-    const string_view& name) {
+    const std::string_view& name) {
   if (name == "none") return kColumnFileCompressionNone;
   if (name == "snappy") return kColumnFileCompressionSnappy;
   if (name == "lz4") return kColumnFileCompressionLZ4;
@@ -171,7 +171,7 @@ void ColumnFileWriter::SetCompression(ColumnFileCompression c) {
   pimpl_->compression = c;
 }
 
-void ColumnFileWriter::Put(uint32_t column, const string_view& data) {
+void ColumnFileWriter::Put(uint32_t column, const std::string_view& data) {
   pimpl_->fields[column].Put(data);
   pimpl_->pending_size += data.size();
 }
@@ -215,7 +215,7 @@ size_t ColumnFileWriter::PendingSize() const { return pimpl_->pending_size; }
 void ColumnFileWriter::Flush() {
   if (pimpl_->fields.empty()) return;
 
-  std::vector<std::pair<uint32_t, string_view>> field_data;
+  std::vector<std::pair<uint32_t, std::string_view>> field_data;
   field_data.reserve(pimpl_->fields.size());
 
   for (auto& field : pimpl_->fields) {
@@ -238,7 +238,7 @@ kj::AutoCloseFd ColumnFileWriter::Finalize() {
   return result;
 }
 
-void ColumnFileWriter::Impl::FieldWriter::Put(const string_view& data) {
+void ColumnFileWriter::Impl::FieldWriter::Put(const std::string_view& data) {
   bool data_mismatch;
   unsigned int shared_prefix = 0;
   if (value_is_null_) {

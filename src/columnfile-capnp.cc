@@ -78,8 +78,8 @@ void WriteMessageToColumnFile(ColumnFileWriter& output,
         auto element_type = list.getSchema().getElementType();
         uint64_t list_size = list.size();
         output.Put(column++,
-                   string_view(reinterpret_cast<const char*>(&list_size),
-                               sizeof(list_size)));
+                   std::string_view(reinterpret_cast<const char*>(&list_size),
+                                    sizeof(list_size)));
         if (element_type.isList() || element_type.isStruct()) {
           for (size_t i = 0; i < list.size(); ++i)
             queue.emplace_back(list[i], column);
@@ -119,26 +119,26 @@ void WriteMessageToColumnFile(ColumnFileWriter& output,
             auto value =
                 struct_value.get(field).as<capnp::DynamicEnum>().getRaw();
             output.Put(column++,
-                       string_view(reinterpret_cast<const char*>(&value),
-                                   sizeof(value)));
+                       std::string_view(reinterpret_cast<const char*>(&value),
+                                        sizeof(value)));
           } else if (field_type.isInt32()) {
             auto value = struct_value.get(field).as<int32_t>();
             output.Put(column++,
-                       string_view(reinterpret_cast<const char*>(&value),
-                                   sizeof(value)));
+                       std::string_view(reinterpret_cast<const char*>(&value),
+                                        sizeof(value)));
           } else if (field_type.isUInt32()) {
             auto value = struct_value.get(field).as<uint32_t>();
             output.Put(column++,
-                       string_view(reinterpret_cast<const char*>(&value),
-                                   sizeof(value)));
+                       std::string_view(reinterpret_cast<const char*>(&value),
+                                        sizeof(value)));
           } else if (field_type.isUInt64()) {
             auto value = struct_value.get(field).as<uint64_t>();
             output.Put(column++,
-                       string_view(reinterpret_cast<const char*>(&value),
-                                   sizeof(value)));
+                       std::string_view(reinterpret_cast<const char*>(&value),
+                                        sizeof(value)));
           } else if (field_type.isText() || field_type.isData()) {
             auto value = struct_value.get(field).as<capnp::Text>();
-            output.Put(column++, string_view(value.begin(), value.size()));
+            output.Put(column++, std::string_view(value.begin(), value.size()));
           } else {
             KJ_FAIL_REQUIRE("Unhandled field type");
           }

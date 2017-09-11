@@ -10,10 +10,10 @@ namespace cantera {
 namespace {
 
 // Makes a copy of the given string inside the arena.
-string_view CopyString(const string_view& string, kj::Arena& arena) {
+std::string_view CopyString(const std::string_view& string, kj::Arena& arena) {
   const auto copy =
       arena.copyString(kj::StringPtr(string.data(), string.size()));
-  return string_view{copy.begin(), copy.size()};
+  return std::string_view{copy.begin(), copy.size()};
 }
 
 }  // namespace
@@ -119,7 +119,7 @@ void ColumnFileSelect::ReadChunk() {
           KJ_ASSERT(in->index == row_idx);
         }
 
-        optional_string_view value = nullopt;
+        optional_string_view value = std::nullopt;
         if (row.size() == 1) {
           KJ_ASSERT(row[0].first == field, row[0].first, field);
           value = row[0].second;
@@ -141,7 +141,7 @@ void ColumnFileSelect::ReadChunk() {
 
             if (filter_selected) {
               if (!value)
-                row_cache.data.emplace_back(field, nullopt);
+                row_cache.data.emplace_back(field, std::nullopt);
               else
                 row_cache.data.emplace_back(
                     field, CopyString(value.value(), *pimpl_->arena));
@@ -153,7 +153,7 @@ void ColumnFileSelect::ReadChunk() {
 
             if (filter_selected) {
               if (!value)
-                out->data.emplace_back(field, nullopt);
+                out->data.emplace_back(field, std::nullopt);
               else
                 out->data.emplace_back(
                     field, CopyString(value.value(), *pimpl_->arena));
@@ -194,7 +194,7 @@ void ColumnFileSelect::ReadChunk() {
         for (const auto& d : row) {
           const auto& value = d.second;
           if (!value)
-            sr->data.emplace_back(d.first, nullopt);
+            sr->data.emplace_back(d.first, std::nullopt);
           else
             sr->data.emplace_back(d.first,
                                   CopyString(d.second.value(), *pimpl_->arena));
