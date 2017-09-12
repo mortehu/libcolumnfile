@@ -165,6 +165,10 @@ ColumnFileWriter::ColumnFileWriter(std::string& output)
   pimpl_->output = std::make_shared<ColumnFileStringOutput>(output);
 }
 
+ColumnFileWriter::ColumnFileWriter(ColumnFileWriter&&) = default;
+
+ColumnFileWriter& ColumnFileWriter::operator=(ColumnFileWriter&&) = default;
+
 ColumnFileWriter::~ColumnFileWriter() { Finalize(); }
 
 void ColumnFileWriter::SetCompression(ColumnFileCompression c) {

@@ -114,6 +114,9 @@ class ColumnFileWriter {
 
   explicit ColumnFileWriter(std::string& output);
 
+  ColumnFileWriter(ColumnFileWriter&&);
+  ColumnFileWriter& operator=(ColumnFileWriter&&);
+
   ~ColumnFileWriter();
 
   // Sets the compression algorithm to use for future blocks.
@@ -189,8 +192,7 @@ class ColumnFileReader {
   explicit ColumnFileReader(std::string_view input);
 
   ColumnFileReader(ColumnFileReader&&);
-
-  ColumnFileReader& operator=(ColumnFileReader&&) = default;
+  ColumnFileReader& operator=(ColumnFileReader&&);
 
   ~ColumnFileReader();
 

@@ -332,6 +332,8 @@ ColumnFileReader::ColumnFileReader(std::string_view input)
 
 ColumnFileReader::ColumnFileReader(ColumnFileReader&&) = default;
 
+ColumnFileReader& ColumnFileReader::operator=(ColumnFileReader&&) = default;
+
 ColumnFileReader::~ColumnFileReader() = default;
 
 void ColumnFileReader::SetColumnFilter(std::unordered_set<uint32_t> columns) {

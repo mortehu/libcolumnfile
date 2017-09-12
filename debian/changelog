@@ -1,3 +1,9 @@
+libcolumnfile (1.1.1-1) unstable; urgency=medium
+
+  * Support move constructor and assignment.
+
+ -- Morten Hustveit <morten.hustveit@gmail.com>  Mon, 11 Sep 2017 23:51:31 -0400
+
 libcolumnfile (1.1.0-1) unstable; urgency=medium
 
   * Switch to C++17.
