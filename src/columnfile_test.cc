@@ -276,10 +276,12 @@ TEST_F(ColumnFileTest, AFLTestCases) {
     try {
       ColumnFileReader reader(OpenFile(path.cStr(), O_RDONLY));
       while (!reader.End()) reader.GetRow();
-    } catch (kj::Exception e) {
+    } catch (kj::Exception& e) {
       KJ_LOG(INFO, e);
-    } catch (std::bad_alloc e) {
+    } catch (std::bad_alloc&) {
       fprintf(stderr, "bad_alloc\n");
+    } catch (std::out_of_range&) {
+      fprintf(stderr, "range error\n");
     }
   }
 }
@@ -301,4 +303,43 @@ TEST_F(ColumnFileTest, IntegerCoding) {
     EXPECT_EQ(i, decoded_int);
     EXPECT_TRUE(read_buffer.empty());
   }
+}
+
+TEST_F(ColumnFileTest, Replace) {
+  const auto tmp_dir = TemporaryDirectory();
+  KJ_DEFER(rmdir(tmp_dir.c_str()));
+
+  const auto tmp_path0 = kj::str(tmp_dir, "/test00");
+  ColumnFileWriter writer(
+      OpenFile(tmp_path0.cStr(), O_WRONLY | O_CREAT | O_TRUNC));
+  KJ_DEFER(unlink(tmp_path0.cStr()));
+
+  writer.Put(0, "aaa");
+  writer.Put(1, "0");
+
+  const auto tmp_path1 = kj::str(tmp_dir, "/test01");
+  writer = ColumnFileWriter(
+      OpenFile(tmp_path1.cStr(), O_WRONLY | O_CREAT | O_TRUNC));
+  KJ_DEFER(unlink(tmp_path1.cStr()));
+
+  writer.Put(0, "bbb");
+  writer.Put(1, "1");
+
+  writer.Finalize();
+
+  ColumnFileReader reader0(OpenFile(tmp_path0.cStr(), O_RDONLY));
+  ASSERT_FALSE(reader0.End());
+
+  auto row = reader0.GetRow();
+  EXPECT_EQ(2U, row.size());
+  EXPECT_EQ("aaa", row[0].second.value());
+  EXPECT_EQ("0", row[1].second.value());
+
+  ColumnFileReader reader1(OpenFile(tmp_path1.cStr(), O_RDONLY));
+  ASSERT_FALSE(reader1.End());
+
+  row = reader1.GetRow();
+  EXPECT_EQ(2U, row.size());
+  EXPECT_EQ("bbb", row[0].second.value());
+  EXPECT_EQ("1", row[1].second.value());
 }

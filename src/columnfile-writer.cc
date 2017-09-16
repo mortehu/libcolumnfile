@@ -165,9 +165,13 @@ ColumnFileWriter::ColumnFileWriter(std::string& output)
   pimpl_->output = std::make_shared<ColumnFileStringOutput>(output);
 }
 
-ColumnFileWriter::ColumnFileWriter(ColumnFileWriter&&) = default;
+ColumnFileWriter::ColumnFileWriter(ColumnFileWriter&& rhs) = default;
 
-ColumnFileWriter& ColumnFileWriter::operator=(ColumnFileWriter&&) = default;
+ColumnFileWriter& ColumnFileWriter::operator=(ColumnFileWriter&& rhs) {
+  Finalize();
+  pimpl_ = std::move(rhs.pimpl_);
+  return *this;
+}
 
 ColumnFileWriter::~ColumnFileWriter() { Finalize(); }
 
@@ -235,7 +239,7 @@ void ColumnFileWriter::Flush() {
 }
 
 kj::AutoCloseFd ColumnFileWriter::Finalize() {
-  if (!pimpl_->output) return nullptr;
+  if (!pimpl_ || !pimpl_->output) return nullptr;
   Flush();
   auto result = pimpl_->output->Finalize();
   pimpl_->output.reset();

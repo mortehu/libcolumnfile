@@ -29,25 +29,27 @@ enum Codes : uint8_t {
 };
 
 inline uint32_t GetUInt(std::string_view& input) {
-  auto begin = input.data();
-  auto i = begin;
-  uint32_t b = *i++;
+  uint32_t b = input.at(0);
+  input.remove_prefix(1);
   uint32_t result = b & 127;
   if (b < 0x80) goto done;
-  b = *i++;
+  b = input.at(0);
+  input.remove_prefix(1);
   result |= (b & 127) << 6;
   if (b < 0x80) goto done;
-  b = *i++;
+  b = input.at(0);
+  input.remove_prefix(1);
   result |= (b & 127) << 13;
   if (b < 0x80) goto done;
-  b = *i++;
+  b = input.at(0);
+  input.remove_prefix(1);
   result |= (b & 127) << 20;
   if (b < 0x80) goto done;
-  b = *i++;
+  b = input.at(0);
+  input.remove_prefix(1);
   KJ_REQUIRE(b <= 0x1f, b);
   result |= b << 27;
 done:
-  input.remove_prefix(i - begin);
   return result;
 }
 

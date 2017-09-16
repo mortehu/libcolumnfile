@@ -252,7 +252,7 @@ ColumnFileStringInput::Fill(const std::unordered_set<uint32_t>& field_filter) {
 struct ColumnFileReader::Impl {
   class FieldReader {
    public:
-    FieldReader(kj::Array<const char> buffer,
+    FieldReader(kj::Array<const char>&& buffer,
                 ColumnFileCompression compression);
 
     FieldReader(FieldReader&&) = default;
@@ -441,7 +441,7 @@ size_t ColumnFileReader::Size() const { return pimpl_->input->Size(); }
 size_t ColumnFileReader::Offset() const { return pimpl_->input->Offset(); }
 
 ColumnFileReader::Impl::FieldReader::FieldReader(
-    kj::Array<const char> buffer, ColumnFileCompression compression)
+    kj::Array<const char>&& buffer, ColumnFileCompression compression)
     : buffer_{std::move(buffer)},
       data_{buffer_.begin(), buffer_.size()},
       compression_{compression} {}
