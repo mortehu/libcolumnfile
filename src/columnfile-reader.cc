@@ -29,7 +29,7 @@ class ColumnFileFdInput : public ColumnFileInput {
 #endif
 
     char magic[sizeof(kMagic)];
-    input_.tryRead(magic, sizeof(kMagic), sizeof(kMagic));
+    input_.read(magic, sizeof(kMagic), sizeof(kMagic));
     KJ_REQUIRE(!memcmp(magic, kMagic, sizeof(kMagic)));
   }
 
@@ -136,7 +136,7 @@ bool ColumnFileFdInput::Next(ColumnFileCompression& compression) {
   } catch (std::bad_alloc e) {
     KJ_FAIL_REQUIRE("Buffer allocation failed", size);
   }
-  input_.tryRead(&buffer_[0], size, size);
+  input_.read(&buffer_[0], size, size);
 
   data_ = buffer_;
 
@@ -189,7 +189,7 @@ std::vector<std::pair<uint32_t, kj::Array<const char>>> ColumnFileFdInput::Fill(
     }
 
     auto buffer = kj::heapArray<char>(f.size);
-    input_.tryRead(buffer.begin(), f.size, f.size);
+    input_.read(buffer.begin(), f.size, f.size);
 
     result.emplace_back(f.index, std::move(buffer));
   }
