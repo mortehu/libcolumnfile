@@ -52,7 +52,7 @@
 //
 //   http://www.example.org/abc.html
 //   [23]image.jpeg
-//   [29].png
+//   [29]png
 //
 // # Chunk encoding
 //
