@@ -24,10 +24,11 @@ inline bool HasSuffix(const std::string_view& haystack,
                           needle.data(), needle.size());
 }
 
-kj::AutoCloseFd OpenFile(const char* path, int flags, int mode = 0666) {
-  int fd;
-  KJ_SYSCALL(fd = open(path, flags, mode), path, flags, mode);
-  return kj::AutoCloseFd(fd);
+std::unique_ptr<std::streambuf> OpenFile(const char* path,
+                                         std::ios_base::openmode mode) {
+  auto result = std::make_unique<std::filebuf>();
+  KJ_REQUIRE(nullptr != result->open(path, mode), path, mode);
+  return std::move(result);
 }
 
 }  // namespace
@@ -42,7 +43,7 @@ struct ColumnFileTest : public testing::Test {
     strcpy(path, tmpdir);
     strcat(path, "/test.XXXXXX");
 
-    KJ_SYSCALL(mkdtemp(path));
+    KJ_REQUIRE(nullptr != mkdtemp(path), std::strerror(errno));
 
     return path;
   }
@@ -50,7 +51,7 @@ struct ColumnFileTest : public testing::Test {
 
 TEST_F(ColumnFileTest, WriteTableToFile) {
   const auto tmp_dir = TemporaryDirectory();
-  KJ_DEFER(rmdir(tmp_dir.c_str()));
+  KJ_DEFER(KJ_SYSCALL(rmdir(tmp_dir.c_str())));
 
   const ColumnFileCompression compression_methods[] = {
       kColumnFileCompressionNone, kColumnFileCompressionSnappy,
@@ -59,10 +60,12 @@ TEST_F(ColumnFileTest, WriteTableToFile) {
   };
 
   for (const auto compression_method : compression_methods) {
-    const auto tmp_path = kj::str(tmp_dir, "/test00");
-    ColumnFileWriter writer(
-        OpenFile(tmp_path.cStr(), O_WRONLY | O_CREAT | O_TRUNC));
-    KJ_DEFER(unlink(tmp_path.cStr()));
+    const auto tmp_path =
+        kj::str(tmp_dir, "/test00_", static_cast<int>(compression_method));
+    ColumnFileWriter writer(OpenFile(
+        tmp_path.cStr(),
+        std::ios_base::binary | std::ios_base::out | std::ios_base::trunc));
+    KJ_DEFER(KJ_SYSCALL(unlink(tmp_path.cStr())));
 
     writer.SetCompression(compression_method);
 
@@ -89,7 +92,8 @@ TEST_F(ColumnFileTest, WriteTableToFile) {
 
     writer.Finalize();
 
-    ColumnFileReader reader(OpenFile(tmp_path.cStr(), O_RDONLY));
+    ColumnFileReader reader(
+        OpenFile(tmp_path.cStr(), std::ios_base::binary | std::ios_base::in));
 
     ASSERT_FALSE(reader.End());
 
@@ -130,69 +134,80 @@ TEST_F(ColumnFileTest, WriteTableToFile) {
 }
 
 TEST_F(ColumnFileTest, WriteTableToString) {
-  std::string buffer;
+  const ColumnFileCompression compression_methods[] = {
+      kColumnFileCompressionNone, kColumnFileCompressionSnappy,
+      kColumnFileCompressionLZ4,  kColumnFileCompressionLZMA,
+      kColumnFileCompressionZLIB,
+  };
 
-  ColumnFileWriter writer(buffer);
-  writer.Put(0, "2000-01-01");
-  writer.Put(1, "January");
-  writer.Put(2, "First");
+  for (const auto compression_method : compression_methods) {
+    std::string buffer;
 
-  writer.Put(0, "2000-01-02");
-  writer.Put(1, "January");
-  writer.Put(2, "Second");
-  writer.Flush();
+    ColumnFileWriter writer(buffer);
 
-  writer.Put(0, "2000-02-02");
-  writer.Put(1, "February");
-  writer.Put(2, "Second");
+    writer.SetCompression(compression_method);
 
-  std::string long_string(0xfff, 'x');
-  writer.Put(0, "2000-02-03");
-  writer.Put(1, "February");
-  writer.Put(2, long_string);
+    writer.Put(0, "2000-01-01");
+    writer.Put(1, "January");
+    writer.Put(2, "First");
 
-  writer.Put(0, "2000-02-03");
-  writer.PutNull(1);
-  writer.PutNull(2);
-  writer.Finalize();
+    writer.Put(0, "2000-01-02");
+    writer.Put(1, "January");
+    writer.Put(2, "Second");
+    writer.Flush();
 
-  ColumnFileReader reader(buffer);
+    writer.Put(0, "2000-02-02");
+    writer.Put(1, "February");
+    writer.Put(2, "Second");
 
-  EXPECT_FALSE(reader.End());
+    std::string long_string(0xfff, 'x');
+    writer.Put(0, "2000-02-03");
+    writer.Put(1, "February");
+    writer.Put(2, long_string);
 
-  auto row = reader.GetRow();
-  EXPECT_EQ(3U, row.size());
-  EXPECT_EQ("2000-01-01", row[0].second.value());
-  EXPECT_EQ("January", row[1].second.value());
-  EXPECT_EQ("First", row[2].second.value());
+    writer.Put(0, "2000-02-03");
+    writer.PutNull(1);
+    writer.PutNull(2);
+    writer.Finalize();
 
-  row = reader.GetRow();
-  EXPECT_EQ(3U, row.size());
-  EXPECT_EQ("2000-01-02", row[0].second.value());
-  EXPECT_EQ("January", row[1].second.value());
-  EXPECT_EQ("Second", row[2].second.value());
+    ColumnFileReader reader(buffer);
 
-  row = reader.GetRow();
-  EXPECT_EQ(3U, row.size());
-  EXPECT_EQ("2000-02-02", row[0].second.value());
-  EXPECT_EQ("February", row[1].second.value());
-  EXPECT_EQ("Second", row[2].second.value());
+    EXPECT_FALSE(reader.End());
 
-  row = reader.GetRow();
-  EXPECT_EQ(3U, row.size());
-  EXPECT_EQ("2000-02-03", row[0].second.value());
-  EXPECT_EQ("February", row[1].second.value());
-  EXPECT_EQ(long_string, row[2].second.value());
+    auto row = reader.GetRow();
+    EXPECT_EQ(3U, row.size());
+    EXPECT_EQ("2000-01-01", row[0].second.value());
+    EXPECT_EQ("January", row[1].second.value());
+    EXPECT_EQ("First", row[2].second.value());
 
-  EXPECT_FALSE(reader.End());
+    row = reader.GetRow();
+    EXPECT_EQ(3U, row.size());
+    EXPECT_EQ("2000-01-02", row[0].second.value());
+    EXPECT_EQ("January", row[1].second.value());
+    EXPECT_EQ("Second", row[2].second.value());
 
-  row = reader.GetRow();
-  EXPECT_EQ(3U, row.size());
-  EXPECT_EQ("2000-02-03", row[0].second.value());
-  EXPECT_FALSE(row[1].second);
-  EXPECT_FALSE(row[2].second);
+    row = reader.GetRow();
+    EXPECT_EQ(3U, row.size());
+    EXPECT_EQ("2000-02-02", row[0].second.value());
+    EXPECT_EQ("February", row[1].second.value());
+    EXPECT_EQ("Second", row[2].second.value());
 
-  EXPECT_TRUE(reader.End());
+    row = reader.GetRow();
+    EXPECT_EQ(3U, row.size());
+    EXPECT_EQ("2000-02-03", row[0].second.value());
+    EXPECT_EQ("February", row[1].second.value());
+    EXPECT_EQ(long_string, row[2].second.value());
+
+    EXPECT_FALSE(reader.End());
+
+    row = reader.GetRow();
+    EXPECT_EQ(3U, row.size());
+    EXPECT_EQ("2000-02-03", row[0].second.value());
+    EXPECT_FALSE(row[1].second);
+    EXPECT_FALSE(row[2].second);
+
+    EXPECT_TRUE(reader.End());
+  }
 }
 
 TEST_F(ColumnFileTest, WriteMessageToString) {
@@ -267,14 +282,15 @@ TEST_F(ColumnFileTest, AFLTestCases) {
   if (!dir) {
     KJ_FAIL_SYSCALL("opendir", errno);
   }
-  KJ_DEFER(closedir(dir));
+  KJ_DEFER(KJ_SYSCALL(closedir(dir)));
 
   while (auto ent = readdir(dir)) {
     if (!HasSuffix(ent->d_name, ".col")) continue;
 
     auto path = kj::str("testdata/", ent->d_name);
     try {
-      ColumnFileReader reader(OpenFile(path.cStr(), O_RDONLY));
+      ColumnFileReader reader(
+          OpenFile(path.cStr(), std::ios_base::binary | std::ios_base::in));
       while (!reader.End()) reader.GetRow();
     } catch (kj::Exception& e) {
       KJ_LOG(INFO, e);
@@ -286,11 +302,30 @@ TEST_F(ColumnFileTest, AFLTestCases) {
   }
 }
 
-TEST_F(ColumnFileTest, IntegerCoding) {
+TEST_F(ColumnFileTest, UnsignedIntegerCoding) {
   static const uint32_t kTestNumbers[] = {
       0,          0x10U,      0x7fU,       0x80U,      0x100U,    0x1000U,
       0x3fffU,    0x4000U,    0x10000U,    0x100000U,  0x1fffffU, 0x200000U,
       0x1000000U, 0xfffffffU, 0x10000000U, 0xffffffffU};
+
+  for (auto i : kTestNumbers) {
+    std::string buffer;
+    cantera::columnfile_internal::PutUInt(buffer, i);
+
+    EXPECT_TRUE((static_cast<uint8_t>(buffer[0]) & 0xc0) != 0xc0);
+
+    std::string_view read_buffer(buffer);
+    auto decoded_int = cantera::columnfile_internal::GetUInt(read_buffer);
+    EXPECT_EQ(i, decoded_int);
+    EXPECT_TRUE(read_buffer.empty());
+  }
+}
+
+TEST_F(ColumnFileTest, SignedIntegerCoding) {
+  static const int32_t kTestNumbers[] = {
+      0,         0x10,      0x7f,       0x80,       0x100,    0x1000,
+      0x3fff,    0x4000,    0x10000,    0x100000,   0x1fffff, 0x200000,
+      0x1000000, 0xfffffff, 0x10000000, -0x7fffffff};
 
   for (auto i : kTestNumbers) {
     std::string buffer;
@@ -307,27 +342,30 @@ TEST_F(ColumnFileTest, IntegerCoding) {
 
 TEST_F(ColumnFileTest, Replace) {
   const auto tmp_dir = TemporaryDirectory();
-  KJ_DEFER(rmdir(tmp_dir.c_str()));
+  KJ_DEFER(KJ_SYSCALL(rmdir(tmp_dir.c_str())));
 
-  const auto tmp_path0 = kj::str(tmp_dir, "/test00");
-  ColumnFileWriter writer(
-      OpenFile(tmp_path0.cStr(), O_WRONLY | O_CREAT | O_TRUNC));
-  KJ_DEFER(unlink(tmp_path0.cStr()));
+  const auto tmp_path0 = kj::str(tmp_dir, "/test01");
+  ColumnFileWriter writer(OpenFile(tmp_path0.cStr(), std::ios_base::binary |
+                                                         std::ios_base::out |
+                                                         std::ios_base::trunc));
+  KJ_DEFER(KJ_SYSCALL(unlink(tmp_path0.cStr())));
 
   writer.Put(0, "aaa");
   writer.Put(1, "0");
 
-  const auto tmp_path1 = kj::str(tmp_dir, "/test01");
-  writer = ColumnFileWriter(
-      OpenFile(tmp_path1.cStr(), O_WRONLY | O_CREAT | O_TRUNC));
-  KJ_DEFER(unlink(tmp_path1.cStr()));
+  const auto tmp_path1 = kj::str(tmp_dir, "/test02");
+  writer = ColumnFileWriter(OpenFile(
+      tmp_path1.cStr(),
+      std::ios_base::binary | std::ios_base::out | std::ios_base::trunc));
+  KJ_DEFER(KJ_SYSCALL(unlink(tmp_path1.cStr())));
 
   writer.Put(0, "bbb");
   writer.Put(1, "1");
 
   writer.Finalize();
 
-  ColumnFileReader reader0(OpenFile(tmp_path0.cStr(), O_RDONLY));
+  ColumnFileReader reader0(
+      OpenFile(tmp_path0.cStr(), std::ios_base::binary | std::ios_base::in));
   ASSERT_FALSE(reader0.End());
 
   auto row = reader0.GetRow();
@@ -335,7 +373,8 @@ TEST_F(ColumnFileTest, Replace) {
   EXPECT_EQ("aaa", row[0].second.value());
   EXPECT_EQ("0", row[1].second.value());
 
-  ColumnFileReader reader1(OpenFile(tmp_path1.cStr(), O_RDONLY));
+  ColumnFileReader reader1(
+      OpenFile(tmp_path1.cStr(), std::ios_base::binary | std::ios_base::in));
   ASSERT_FALSE(reader1.End());
 
   row = reader1.GetRow();

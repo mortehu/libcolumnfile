@@ -1,12 +1,11 @@
 #include "columnfile.h"
 
+#include <cstring>
+
 #include <fcntl.h>
 #include <unistd.h>
 
-#include <kj/array.h>
-#include <kj/common.h>
 #include <kj/debug.h>
-#include <kj/io.h>
 #include <lz4.h>
 #include <lzma.h>
 #include <snappy.h>
@@ -20,34 +19,28 @@ namespace {
 
 using namespace columnfile_internal;
 
-class ColumnFileFdInput : public ColumnFileInput {
+class ColumnFileStreambufInput : public ColumnFileInput {
  public:
-  ColumnFileFdInput(kj::AutoCloseFd fd)
-      : fd_{std::move(fd)}, input_{fd_.get()} {
-#ifdef POSIX_FADV_SEQUENTIAL
-    (void)posix_fadvise(fd_, 0, 0, POSIX_FADV_SEQUENTIAL);
-#endif
-
+  ColumnFileStreambufInput(std::unique_ptr<std::streambuf>&& fd)
+      : fd_{std::move(fd)} {
     char magic[sizeof(kMagic)];
-    input_.read(magic, sizeof(kMagic), sizeof(kMagic));
-    KJ_REQUIRE(!memcmp(magic, kMagic, sizeof(kMagic)));
+    KJ_REQUIRE(sizeof(kMagic) == fd_->sgetn(magic, sizeof(kMagic)));
+    KJ_REQUIRE(!std::memcmp(magic, kMagic, sizeof(kMagic)));
+    magic_end_ = fd_->pubseekoff(0, std::ios_base::cur);
   }
 
-  ~ColumnFileFdInput() override {}
+  ~ColumnFileStreambufInput() override {}
 
   bool Next(ColumnFileCompression& compression) override;
 
-  std::vector<std::pair<uint32_t, kj::Array<const char>>> Fill(
+  std::vector<std::pair<uint32_t, Buffer>> Fill(
       const std::unordered_set<uint32_t>& field_filter) override;
 
   bool End() const override { return end_; }
 
   void SeekToStart() override {
-    KJ_REQUIRE(fd_ != nullptr);
+    KJ_REQUIRE(magic_end_ == fd_->pubseekpos(magic_end_));
 
-    KJ_SYSCALL(lseek(fd_, sizeof(kMagic), SEEK_SET));
-
-    data_ = {};
     buffer_.clear();
     end_ = false;
   }
@@ -66,12 +59,10 @@ class ColumnFileFdInput : public ColumnFileInput {
 
   bool end_ = false;
 
-  std::string buffer_;
+  Buffer buffer_;
 
-  std::string_view data_;
-
-  kj::AutoCloseFd fd_;
-  kj::FdInputStream input_;
+  std::unique_ptr<std::streambuf> fd_;
+  std::streambuf::pos_type magic_end_;
 
   std::vector<FieldMeta> field_meta_;
 
@@ -94,7 +85,7 @@ class ColumnFileStringInput : public ColumnFileInput {
 
   bool Next(ColumnFileCompression& compression) override;
 
-  std::vector<std::pair<uint32_t, kj::Array<const char>>> Fill(
+  std::vector<std::pair<uint32_t, Buffer>> Fill(
       const std::unordered_set<uint32_t>& field_filter) override;
 
   bool End() const override { return data_.empty(); }
@@ -118,11 +109,9 @@ class ColumnFileStringInput : public ColumnFileInput {
   std::vector<FieldMeta> field_meta_;
 };
 
-bool ColumnFileFdInput::Next(ColumnFileCompression& compression) {
-  KJ_REQUIRE(data_.empty());
-
+bool ColumnFileStreambufInput::Next(ColumnFileCompression& compression) {
   uint8_t size_buffer[4];
-  const auto ret = input_.tryRead(size_buffer, 4, 4);
+  const auto ret = fd_->sgetn(reinterpret_cast<char*>(size_buffer), 4);
   if (ret < 4) {
     end_ = true;
     KJ_REQUIRE(ret == 0);
@@ -136,19 +125,19 @@ bool ColumnFileFdInput::Next(ColumnFileCompression& compression) {
   } catch (std::bad_alloc e) {
     KJ_FAIL_REQUIRE("Buffer allocation failed", size);
   }
-  input_.read(&buffer_[0], size, size);
+  KJ_REQUIRE(size == fd_->sgetn(buffer_.data(), size));
 
-  data_ = buffer_;
+  std::string_view data{buffer_.data(), buffer_.size()};
 
-  compression = static_cast<ColumnFileCompression>(GetUInt(data_));
+  compression = static_cast<ColumnFileCompression>(GetUInt(data));
 
-  const auto field_count = GetUInt(data_);
+  const auto field_count = GetUInt(data);
 
   field_meta_.resize(field_count);
 
   for (size_t i = 0; i < field_count; ++i) {
-    field_meta_[i].index = GetUInt(data_);
-    field_meta_[i].size = GetUInt(data_);
+    field_meta_[i].index = GetUInt(data);
+    field_meta_[i].size = GetUInt(data);
   }
 
   at_field_end_ = false;
@@ -156,19 +145,20 @@ bool ColumnFileFdInput::Next(ColumnFileCompression& compression) {
   return true;
 }
 
-std::vector<std::pair<uint32_t, kj::Array<const char>>> ColumnFileFdInput::Fill(
+std::vector<std::pair<uint32_t, ColumnFileInput::Buffer>>
+ColumnFileStreambufInput::Fill(
     const std::unordered_set<uint32_t>& field_filter) {
-  std::vector<std::pair<uint32_t, kj::Array<const char>>> result;
+  std::vector<std::pair<uint32_t, Buffer>> result;
 
   result.reserve(field_filter.empty() ? field_meta_.size()
                                       : field_filter.size());
 
   if (at_field_end_) {
-    off_t reverse_amount = 0;
+    std::streambuf::off_type offset = 0;
 
-    for (const auto& f : field_meta_) reverse_amount += f.size;
+    for (const auto& f : field_meta_) offset -= f.size;
 
-    KJ_SYSCALL(lseek(fd_, -reverse_amount, SEEK_CUR));
+    KJ_REQUIRE(-1 != fd_->pubseekoff(offset, std::ios_base::cur));
   }
 
   // Number of bytes to seek before next read.  The purpose of having this
@@ -184,18 +174,18 @@ std::vector<std::pair<uint32_t, kj::Array<const char>>> ColumnFileFdInput::Fill(
     }
 
     if (skip_amount > 0) {
-      KJ_SYSCALL(lseek(fd_, skip_amount, SEEK_CUR));
+      KJ_REQUIRE(-1 != fd_->pubseekoff(skip_amount, std::ios_base::cur));
       skip_amount = 0;
     }
 
-    auto buffer = kj::heapArray<char>(f.size);
-    input_.read(buffer.begin(), f.size, f.size);
+    Buffer buffer(f.size);
+    KJ_REQUIRE(f.size == fd_->sgetn(buffer.data(), f.size));
 
     result.emplace_back(f.index, std::move(buffer));
   }
 
   if (skip_amount > 0) {
-    KJ_SYSCALL(lseek(fd_, skip_amount, SEEK_CUR));
+    KJ_REQUIRE(-1 != fd_->pubseekoff(skip_amount, std::ios_base::cur));
   }
 
   at_field_end_ = true;
@@ -220,28 +210,20 @@ bool ColumnFileStringInput::Next(ColumnFileCompression& compression) {
   }
 
   for (auto& f : field_meta_) {
-    f.data = data_.begin();
+    f.data = data_.data();
     data_.remove_prefix(f.size);
   }
 
   return true;
 }
 
-std::vector<std::pair<uint32_t, kj::Array<const char>>>
+std::vector<std::pair<uint32_t, ColumnFileInput::Buffer>>
 ColumnFileStringInput::Fill(const std::unordered_set<uint32_t>& field_filter) {
-  std::vector<std::pair<uint32_t, kj::Array<const char>>> result;
+  std::vector<std::pair<uint32_t, Buffer>> result;
 
   for (const auto& f : field_meta_) {
     if (!field_filter.empty() && !field_filter.count(f.index)) continue;
-
-    // TODO(mortehu): See if we can use a non-owning array instead, e.g.
-    //     kj::Array<const char>(data.begin(), f.second,
-    //     kj::NullArrayDisposer());
-    //  This way, we wouldn't have to copy all the data.
-
-    auto buffer = kj::heapArray<char>(f.data, f.size);
-
-    result.emplace_back(f.index, std::move(buffer));
+    result.emplace_back(f.index, Buffer{f.data, f.size});
   }
 
   return result;
@@ -249,16 +231,58 @@ ColumnFileStringInput::Fill(const std::unordered_set<uint32_t>& field_filter) {
 
 }  // namespace
 
+ColumnFileInput::Buffer::Buffer() = default;
+
+ColumnFileInput::Buffer::Buffer(size_t size)
+    : data_{new char[size]}, size_{size}, owner_{true} {}
+
+ColumnFileInput::Buffer::Buffer(const char* data, size_t size)
+    : data_{const_cast<char*>(data)}, size_{size}, owner_{false} {}
+
+ColumnFileInput::Buffer::Buffer(Buffer&& rhs)
+    : data_{rhs.data_}, size_{rhs.size_}, owner_{rhs.owner_} {
+  rhs.owner_ = false;
+}
+
+ColumnFileInput::Buffer& ColumnFileInput::Buffer::operator=(Buffer&& rhs) {
+  std::swap(data_, rhs.data_);
+  std::swap(size_, rhs.size_);
+  std::swap(owner_, rhs.owner_);
+  return *this;
+}
+
+ColumnFileInput::Buffer::~Buffer() {
+  if (owner_) delete[] data_;
+}
+
+void ColumnFileInput::Buffer::clear() { size_ = 0; }
+
+void ColumnFileInput::Buffer::resize(size_t new_size) {
+  if (owner_) {
+    if (new_size < size_) {
+      size_ = new_size;
+      return;
+    }
+
+    delete[] data_;
+  }
+
+  data_ = new char[new_size];
+  size_ = new_size;
+  owner_ = true;
+}
+
 struct ColumnFileReader::Impl {
   class FieldReader {
    public:
-    FieldReader(kj::Array<const char>&& buffer,
+    FieldReader(ColumnFileInput::Buffer&& buffer,
                 ColumnFileCompression compression);
 
-    FieldReader(FieldReader&&) = default;
-    FieldReader& operator=(FieldReader&&) = default;
+    FieldReader(FieldReader&& rhs) = default;
 
-    KJ_DISALLOW_COPY(FieldReader);
+    FieldReader(const FieldReader& rhs) = delete;
+    FieldReader& operator=(FieldReader&&) = delete;
+    FieldReader& operator=(FieldReader&) = delete;
 
     bool End() const { return !repeat_ && data_.empty(); }
 
@@ -281,7 +305,7 @@ struct ColumnFileReader::Impl {
     void Fill();
 
    private:
-    kj::Array<const char> buffer_;
+    ColumnFileInput::Buffer buffer_;
 
     std::string_view data_;
 
@@ -305,9 +329,9 @@ struct ColumnFileReader::Impl {
   std::vector<std::pair<uint32_t, optional_string_view>> row_buffer;
 };
 
-std::unique_ptr<ColumnFileInput> ColumnFileReader::FileDescriptorInput(
-    kj::AutoCloseFd fd) {
-  return std::make_unique<ColumnFileFdInput>(std::move(fd));
+std::unique_ptr<ColumnFileInput> ColumnFileReader::StreambufInput(
+    std::unique_ptr<std::streambuf>&& fd) {
+  return std::make_unique<ColumnFileStreambufInput>(std::move(fd));
 }
 
 std::unique_ptr<ColumnFileInput> ColumnFileReader::StringInput(
@@ -320,9 +344,9 @@ ColumnFileReader::ColumnFileReader(std::unique_ptr<ColumnFileInput> input)
   pimpl_->input = std::move(input);
 }
 
-ColumnFileReader::ColumnFileReader(kj::AutoCloseFd fd)
+ColumnFileReader::ColumnFileReader(std::unique_ptr<std::streambuf>&& fd)
     : pimpl_{std::make_unique<Impl>()} {
-  pimpl_->input = std::make_unique<ColumnFileFdInput>(std::move(fd));
+  pimpl_->input = std::make_unique<ColumnFileStreambufInput>(std::move(fd));
 }
 
 ColumnFileReader::ColumnFileReader(std::string_view input)
@@ -410,7 +434,7 @@ ColumnFileReader::GetRow() {
     pimpl_->row_buffer.reserve(pimpl_->fields.size());
 
   for (auto i = pimpl_->fields.begin(); i != pimpl_->fields.end(); ++i) {
-    auto data = i->second.Get();
+    const auto& data = i->second.Get();
 
     if (data) {
       pimpl_->row_buffer.emplace_back(i->first, *data);
@@ -441,9 +465,9 @@ size_t ColumnFileReader::Size() const { return pimpl_->input->Size(); }
 size_t ColumnFileReader::Offset() const { return pimpl_->input->Offset(); }
 
 ColumnFileReader::Impl::FieldReader::FieldReader(
-    kj::Array<const char>&& buffer, ColumnFileCompression compression)
+    ColumnFileInput::Buffer&& buffer, ColumnFileCompression compression)
     : buffer_{std::move(buffer)},
-      data_{buffer_.begin(), buffer_.size()},
+      data_{buffer_.data(), buffer_.size()},
       compression_{compression} {}
 
 void ColumnFileReader::Impl::FieldReader::Fill() {
@@ -456,29 +480,27 @@ void ColumnFileReader::Impl::FieldReader::Fill() {
       KJ_REQUIRE(snappy::GetUncompressedLength(data_.data(), data_.size(),
                                                &decompressed_size));
 
-      auto decompressed_data = kj::heapArray<char>(decompressed_size);
+      ColumnFileInput::Buffer decompressed_data{decompressed_size};
       KJ_REQUIRE(snappy::RawUncompress(data_.data(), data_.size(),
-                                       decompressed_data.begin()));
+                                       decompressed_data.data()));
       buffer_ = std::move(decompressed_data);
-
-      data_ = std::string_view{buffer_.begin(), buffer_.size()};
+      data_ = std::string_view{buffer_.data(), buffer_.size()};
       compression_ = kColumnFileCompressionNone;
     } break;
 
     case kColumnFileCompressionLZ4: {
       std::string_view input(data_);
-      auto decompressed_size = GetUInt(input);
+      const size_t decompressed_size = GetUInt(input);
 
-      auto decompressed_data = kj::heapArray<char>(decompressed_size);
+      ColumnFileInput::Buffer decompressed_data{decompressed_size};
       auto decompress_result =
-          LZ4_decompress_safe(input.data(), decompressed_data.begin(),
+          LZ4_decompress_safe(input.data(), decompressed_data.data(),
                               input.size(), decompressed_size);
       KJ_REQUIRE(decompress_result == static_cast<int>(decompressed_size),
                  decompress_result, decompressed_size);
 
       buffer_ = std::move(decompressed_data);
-
-      data_ = std::string_view{buffer_.begin(), buffer_.size()};
+      data_ = std::string_view{buffer_.data(), buffer_.size()};
       compression_ = kColumnFileCompressionNone;
     } break;
 
@@ -486,7 +508,7 @@ void ColumnFileReader::Impl::FieldReader::Fill() {
       std::string_view input(data_);
       auto decompressed_size = GetUInt(input);
 
-      auto decompressed_data = kj::heapArray<char>(decompressed_size);
+      ColumnFileInput::Buffer decompressed_data(decompressed_size);
 
       lzma_stream ls = LZMA_STREAM_INIT;
 
@@ -496,7 +518,7 @@ void ColumnFileReader::Impl::FieldReader::Fill() {
       ls.avail_in = input.size();
       ls.total_in = input.size();
 
-      ls.next_out = reinterpret_cast<uint8_t*>(decompressed_data.begin());
+      ls.next_out = reinterpret_cast<uint8_t*>(decompressed_data.data());
       ls.avail_out = decompressed_size;
 
       const auto code_ret = lzma_code(&ls, LZMA_FINISH);
@@ -506,8 +528,7 @@ void ColumnFileReader::Impl::FieldReader::Fill() {
                  decompressed_size);
 
       buffer_ = std::move(decompressed_data);
-
-      data_ = std::string_view{buffer_.begin(), buffer_.size()};
+      data_ = std::string_view{buffer_.data(), buffer_.size()};
       compression_ = kColumnFileCompressionNone;
     } break;
 
@@ -515,7 +536,7 @@ void ColumnFileReader::Impl::FieldReader::Fill() {
       std::string_view input(data_);
       auto decompressed_size = GetUInt(input);
 
-      auto decompressed_data = kj::heapArray<char>(decompressed_size);
+      ColumnFileInput::Buffer decompressed_data(decompressed_size);
 
       z_stream zs;
       memset(&zs, 0, sizeof(zs));
@@ -527,7 +548,7 @@ void ColumnFileReader::Impl::FieldReader::Fill() {
       zs.avail_in = input.size();
       zs.total_in = input.size();
 
-      zs.next_out = reinterpret_cast<uint8_t*>(decompressed_data.begin());
+      zs.next_out = reinterpret_cast<uint8_t*>(decompressed_data.data());
       zs.avail_out = decompressed_size;
 
       const auto inflate_ret = inflate(&zs, Z_FINISH);
@@ -538,8 +559,7 @@ void ColumnFileReader::Impl::FieldReader::Fill() {
                  decompressed_size);
 
       buffer_ = std::move(decompressed_data);
-
-      data_ = std::string_view{buffer_.begin(), buffer_.size()};
+      data_ = std::string_view{buffer_.data(), buffer_.size()};
       compression_ = kColumnFileCompressionNone;
     } break;
 
@@ -572,8 +592,8 @@ void ColumnFileReader::Impl::FieldReader::Fill() {
 
         // We just move the old prefix in front of the new suffix, corrupting
         // whatever data is there; we're not going to read it again anyway.
-        memmove(const_cast<char*>(data_.data()) - shared_prefix, value_.begin(),
-                shared_prefix);
+        std::memmove(const_cast<char*>(data_.data()) - shared_prefix,
+                     value_.begin(), shared_prefix);
 
         value_ = std::string_view(data_.begin() - shared_prefix,
                                   shared_prefix + suffix_length);
@@ -594,28 +614,30 @@ void ColumnFileReader::Fill(bool next) {
 
   if (next && !pimpl_->input->Next(pimpl_->compression)) return;
 
-  auto fields = pimpl_->input->Fill(pimpl_->column_filter);
+  auto&& fields = pimpl_->input->Fill(pimpl_->column_filter);
 
   KJ_ASSERT(!fields.empty());
 
   if (pimpl_->compression == kColumnFileCompressionLZMA) {
     std::vector<std::pair<uint32_t, std::future<Impl::FieldReader>>>
         future_fields;
+    future_fields.reserve(fields.size());
 
-    for (auto& field : fields) {
-      future_fields.emplace_back(field.first, std::async(std::launch::async, [
-        this, data = std::move(field.second)
-      ]() mutable {
-        Impl::FieldReader result(std::move(data), pimpl_->compression);
-        if (!result.End()) result.Fill();
-        return result;
-      }));
+    for (auto&& field : fields) {
+      future_fields.emplace_back(
+          field.first, std::async(std::launch::async, [
+            compression = pimpl_->compression, data = std::move(field.second)
+          ]() mutable {
+            Impl::FieldReader result(std::move(data), compression);
+            if (!result.End()) result.Fill();
+            return result;
+          }));
     }
 
-    for (auto& field : future_fields)
+    for (auto&& field : future_fields)
       pimpl_->fields.emplace(field.first, field.second.get());
   } else {
-    for (auto& field : fields) {
+    for (auto&& field : fields) {
       pimpl_->fields.emplace(
           field.first,
           Impl::FieldReader(std::move(field.second), pimpl_->compression));

@@ -2,7 +2,6 @@
 
 #include <deque>
 
-#include <kj/common.h>
 #include <kj/debug.h>
 #include <zlib.h>
 

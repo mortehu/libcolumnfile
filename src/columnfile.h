@@ -2,6 +2,8 @@
 #define CANTERA_COLUMNFILE_H_ 1
 
 #include <cstdint>
+#include <cstring>
+#include <fstream>
 #include <functional>
 #include <map>
 #include <memory>
@@ -9,9 +11,6 @@
 #include <string_view>
 #include <unordered_set>
 #include <vector>
-
-#include <kj/array.h>
-#include <kj/io.h>
 
 // # Variable length integer encoding
 //
@@ -30,7 +29,8 @@
 //
 //   Variable length integer: How many times the value should be repeated.
 //
-//   Variable length integer: Reserved; the parser must abort if this is not zero.
+//   Variable length integer: Reserved; the parser must abort if this is not
+//   zero.
 //
 //   Byte:                    Control; multiple meanings:
 //
@@ -100,7 +100,7 @@ class ColumnFileOutput {
 
   // Finishes writing the file.  Returns the underlying file descriptor, if
   // available.
-  virtual kj::AutoCloseFd Finalize() = 0;
+  virtual std::unique_ptr<std::streambuf> Finalize() = 0;
 };
 
 class ColumnFileWriter {
@@ -110,7 +110,7 @@ class ColumnFileWriter {
 
   explicit ColumnFileWriter(std::shared_ptr<ColumnFileOutput> output);
 
-  explicit ColumnFileWriter(kj::AutoCloseFd&& fd);
+  explicit ColumnFileWriter(std::unique_ptr<std::streambuf>&& fd);
 
   explicit ColumnFileWriter(std::string& output);
 
@@ -137,10 +137,10 @@ class ColumnFileWriter {
   // Writes all buffered records to the output stream.
   void Flush();
 
-  // Finishes writing the file.  Returns the underlying file descriptor.
+  // Finishes writing the file.  Returns the underlying stream.
   //
   // This function is implicitly called by the destructor.
-  kj::AutoCloseFd Finalize();
+  std::unique_ptr<std::streambuf> Finalize();
 
  private:
   struct Impl;
@@ -149,6 +149,34 @@ class ColumnFileWriter {
 
 class ColumnFileInput {
  public:
+  class Buffer {
+   public:
+    Buffer();
+
+    Buffer(size_t size);
+
+    Buffer(const char* data, size_t size);
+
+    Buffer(Buffer&& rhs);
+
+    Buffer& operator=(Buffer&& rhs);
+
+    ~Buffer();
+
+    char* data() { return data_; }
+
+    size_t size() const { return size_; }
+
+    void clear();
+
+    void resize(size_t new_size);
+
+   private:
+    char* data_ = nullptr;
+    size_t size_ = 0;
+    bool owner_ = false;
+  };
+
   virtual ~ColumnFileInput() noexcept(false) {}
 
   // Moves to the next segment.  Returns `false` if the end of the input stream
@@ -157,7 +185,7 @@ class ColumnFileInput {
 
   // Returns the data chunks for the fields specified in `field_filter`.  If
   // `field_filter` is empty, all fields are selected.
-  virtual std::vector<std::pair<uint32_t, kj::Array<const char>>> Fill(
+  virtual std::vector<std::pair<uint32_t, Buffer>> Fill(
       const std::unordered_set<uint32_t>& field_filter) = 0;
 
   // Returns `true` if the next call to `Fill` will definitely return an
@@ -177,8 +205,8 @@ class ColumnFileInput {
 
 class ColumnFileReader {
  public:
-  static std::unique_ptr<ColumnFileInput> FileDescriptorInput(
-      kj::AutoCloseFd fd);
+  static std::unique_ptr<ColumnFileInput> StreambufInput(
+      std::unique_ptr<std::streambuf>&& fd);
 
   static std::unique_ptr<ColumnFileInput> StringInput(std::string_view data);
 
@@ -186,7 +214,7 @@ class ColumnFileReader {
 
   // Reads a column file as a stream.  If you want to use memory-mapped I/O,
   // use the string_view based constructor below.
-  explicit ColumnFileReader(kj::AutoCloseFd fd);
+  explicit ColumnFileReader(std::unique_ptr<std::streambuf>&& fd);
 
   // Reads a column file from memory.
   explicit ColumnFileReader(std::string_view input);
@@ -262,7 +290,8 @@ class ColumnFileSelect {
   void StartScan();
 
   // Returns the next row, if any.  Use `KJ_IF_MAYBE()` to process the result.
-  kj::Maybe<const std::vector<std::pair<uint32_t, optional_string_view>>&>
+  std::optional<std::reference_wrapper<
+      const std::vector<std::pair<uint32_t, optional_string_view>>>>
   Iterate();
 
   // Convenience wrapper for `StartScan()` and `Iterate()`.

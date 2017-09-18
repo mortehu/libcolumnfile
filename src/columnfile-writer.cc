@@ -3,9 +3,7 @@
 #include <fcntl.h>
 #include <unistd.h>
 
-#include <kj/array.h>
 #include <kj/debug.h>
-#include <kj/io.h>
 #include <lz4.h>
 #include <lzma.h>
 #include <snappy.h>
@@ -18,18 +16,17 @@ namespace {
 
 using namespace columnfile_internal;
 
-class ColumnFileFdOutput : public ColumnFileOutput {
+class ColumnFileStreambufOutput : public ColumnFileOutput {
  public:
-  ColumnFileFdOutput(kj::AutoCloseFd fd);
+  ColumnFileStreambufOutput(std::unique_ptr<std::streambuf>&& fd);
 
   void Flush(const std::vector<std::pair<uint32_t, std::string_view>>& fields,
              const ColumnFileCompression compression) override;
 
-  kj::AutoCloseFd Finalize() override { return std::move(fd_); }
+  std::unique_ptr<std::streambuf> Finalize() override { return std::move(fd_); }
 
  private:
-  kj::AutoCloseFd fd_;
-  kj::FdOutputStream output_;
+  std::unique_ptr<std::streambuf> fd_;
 };
 
 class ColumnFileStringOutput : public ColumnFileOutput {
@@ -41,19 +38,21 @@ class ColumnFileStringOutput : public ColumnFileOutput {
   void Flush(const std::vector<std::pair<uint32_t, std::string_view>>& fields,
              const ColumnFileCompression compression) override;
 
-  kj::AutoCloseFd Finalize() override { return nullptr; }
+  std::unique_ptr<std::streambuf> Finalize() override { return {}; }
 
  private:
   std::string& output_;
 };
 
-ColumnFileFdOutput::ColumnFileFdOutput(kj::AutoCloseFd fd)
-    : fd_{std::move(fd)}, output_{fd_.get()} {
-  auto offset = lseek(fd_, 0, SEEK_END);
-  if (offset <= 0) output_.write(kMagic, sizeof(kMagic));
+ColumnFileStreambufOutput::ColumnFileStreambufOutput(std::unique_ptr<std::streambuf>&& fd)
+    : fd_{std::move(fd)} {
+  const auto offset = fd_->pubseekoff(0, std::ios_base::end);
+  if (offset <= 0) {
+    KJ_REQUIRE(sizeof(kMagic) == fd_->sputn(kMagic, sizeof(kMagic)));
+  }
 }
 
-void ColumnFileFdOutput::Flush(
+void ColumnFileStreambufOutput::Flush(
     const std::vector<std::pair<uint32_t, std::string_view>>& fields,
     const ColumnFileCompression compression) {
   std::string buffer;
@@ -73,10 +72,12 @@ void ColumnFileFdOutput::Flush(
   buffer[2] = buffer_size >> 8U;
   buffer[3] = buffer_size;
 
-  output_.write(buffer.data(), buffer.size());
+  KJ_REQUIRE(static_cast<std::streamsize>(buffer.size()) == fd_->sputn(buffer.data(), buffer.size()));
 
   for (const auto& field : fields)
-    output_.write(field.second.data(), field.second.size());
+    KJ_REQUIRE(static_cast<std::streamsize>(field.second.size()) == fd_->sputn(field.second.data(), field.second.size()));
+
+  KJ_REQUIRE(0 == fd_->pubsync());
 }
 
 void ColumnFileStringOutput::Flush(
@@ -133,7 +134,7 @@ struct ColumnFileWriter::Impl {
 
   std::shared_ptr<ColumnFileOutput> output;
 
-  ColumnFileCompression compression = kColumnFileCompressionLZ4;
+  ColumnFileCompression compression = kColumnFileCompressionDefault;
 
   std::map<uint32_t, FieldWriter> fields;
 
@@ -155,9 +156,9 @@ ColumnFileWriter::ColumnFileWriter(std::shared_ptr<ColumnFileOutput> output)
   pimpl_->output = std::move(output);
 }
 
-ColumnFileWriter::ColumnFileWriter(kj::AutoCloseFd&& fd)
+ColumnFileWriter::ColumnFileWriter(std::unique_ptr<std::streambuf>&& fd)
     : pimpl_{std::make_unique<Impl>()} {
-  pimpl_->output = std::make_shared<ColumnFileFdOutput>(std::move(fd));
+  pimpl_->output = std::make_shared<ColumnFileStreambufOutput>(std::move(fd));
 }
 
 ColumnFileWriter::ColumnFileWriter(std::string& output)
@@ -238,8 +239,8 @@ void ColumnFileWriter::Flush() {
   pimpl_->pending_size = 0;
 }
 
-kj::AutoCloseFd ColumnFileWriter::Finalize() {
-  if (!pimpl_ || !pimpl_->output) return nullptr;
+std::unique_ptr<std::streambuf> ColumnFileWriter::Finalize() {
+  if (!pimpl_ || !pimpl_->output) return {};
   Flush();
   auto result = pimpl_->output->Finalize();
   pimpl_->output.reset();

@@ -210,17 +210,17 @@ void ColumnFileSelect::ReadChunk() {
   }
 }
 
-kj::Maybe<const std::vector<std::pair<uint32_t, optional_string_view>>&>
+std::optional<std::reference_wrapper<const std::vector<std::pair<uint32_t, optional_string_view>>>>
 ColumnFileSelect::Iterate() {
   if (pimpl_->filters.empty()) {
-    if (pimpl_->input.End()) return nullptr;
+    if (pimpl_->input.End()) return std::nullopt;
 
     return pimpl_->input.GetRow();
   }
 
   if (pimpl_->chunk_offset == pimpl_->row_buffer.size()) {
     ReadChunk();
-    if (pimpl_->chunk_offset == pimpl_->row_buffer.size()) return nullptr;
+    if (pimpl_->chunk_offset == pimpl_->row_buffer.size()) return std::nullopt;
   }
 
   auto& row = pimpl_->row_buffer[pimpl_->chunk_offset++];
@@ -238,10 +238,9 @@ void ColumnFileSelect::Execute(
   StartScan();
 
   for (;;) {
-    KJ_IF_MAYBE(row, Iterate()) { callback(*row); }
-    else {
-      break;
-    }
+    const auto& row = Iterate();
+    if (!row) break;
+    callback(*row);
   }
 }
 
