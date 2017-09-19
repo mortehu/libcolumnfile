@@ -1,3 +1,11 @@
+libcolumnfile (1.2.0) unstable; urgency=medium
+
+  * Remove dependency on KJ headers in programs linking to this library.
+  * Thanks to new features in C++17, we can use the C++ Standard Library
+    instead of KJ in a few more places.
+
+ -- Morten Hustveit <morten.hustveit@gmail.com>  Tue, 19 Sep 2017 18:13:22 -0400
+
 libcolumnfile (1.1.2) unstable; urgency=medium
 
   * Various bugfixes.
