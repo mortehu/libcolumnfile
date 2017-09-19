@@ -1,9 +1,7 @@
 #include "columnfile.h"
 
-#include <fcntl.h>
-#include <unistd.h>
+#include <cassert>
 
-#include <kj/debug.h>
 #include <lz4.h>
 #include <lzma.h>
 #include <snappy.h>
@@ -44,11 +42,13 @@ class ColumnFileStringOutput : public ColumnFileOutput {
   std::string& output_;
 };
 
-ColumnFileStreambufOutput::ColumnFileStreambufOutput(std::unique_ptr<std::streambuf>&& fd)
+ColumnFileStreambufOutput::ColumnFileStreambufOutput(
+    std::unique_ptr<std::streambuf>&& fd)
     : fd_{std::move(fd)} {
   const auto offset = fd_->pubseekoff(0, std::ios_base::end);
   if (offset <= 0) {
-    KJ_REQUIRE(sizeof(kMagic) == fd_->sputn(kMagic, sizeof(kMagic)));
+    if (sizeof(kMagic) != fd_->sputn(kMagic, sizeof(kMagic)))
+      throw ColumnFileException{"sputn() failed to write magic bytes"};
   }
 }
 
@@ -72,12 +72,16 @@ void ColumnFileStreambufOutput::Flush(
   buffer[2] = buffer_size >> 8U;
   buffer[3] = buffer_size;
 
-  KJ_REQUIRE(static_cast<std::streamsize>(buffer.size()) == fd_->sputn(buffer.data(), buffer.size()));
+  if (static_cast<std::streamsize>(buffer.size()) !=
+      fd_->sputn(buffer.data(), buffer.size()))
+    throw ColumnFileException{"sputn() failed to write segment metadata"};
 
   for (const auto& field : fields)
-    KJ_REQUIRE(static_cast<std::streamsize>(field.second.size()) == fd_->sputn(field.second.data(), field.second.size()));
+    if (static_cast<std::streamsize>(field.second.size()) !=
+        fd_->sputn(field.second.data(), field.second.size()))
+      throw ColumnFileException{"sputn() failed to write segment"};
 
-  KJ_REQUIRE(0 == fd_->pubsync());
+  if (0 != fd_->pubsync()) throw ColumnFileException{"pubsync() failed"};
 }
 
 void ColumnFileStringOutput::Flush(
@@ -148,7 +152,7 @@ ColumnFileCompression ColumnFileWriter::StringToCompressingAlgorithm(
   if (name == "lz4") return kColumnFileCompressionLZ4;
   if (name == "lzma") return kColumnFileCompressionLZMA;
   if (name == "zlib") return kColumnFileCompressionZLIB;
-  KJ_FAIL_REQUIRE("Unsupported compression algorithm");
+  throw ColumnFileException{"unsupported compression algorithm"};
 }
 
 ColumnFileWriter::ColumnFileWriter(std::shared_ptr<ColumnFileOutput> output)
@@ -322,7 +326,7 @@ void ColumnFileWriter::Impl::FieldWriter::Finalize(
       size_t compressed_length = SIZE_MAX;
       snappy::RawCompress(data_.data(), data_.size(), &compressed_data[0],
                           &compressed_length);
-      KJ_REQUIRE(compressed_length <= compressed_data.size());
+      assert(compressed_length <= compressed_data.size());
       compressed_data.resize(compressed_length);
       data_.swap(compressed_data);
     } break;
@@ -335,7 +339,7 @@ void ColumnFileWriter::Impl::FieldWriter::Finalize(
 
       const auto compressed_length = LZ4_compress(
           data_.data(), &compressed_data[data_offset], data_.size());
-      KJ_REQUIRE(data_offset + compressed_length <= compressed_data.size());
+      assert(data_offset + compressed_length <= compressed_data.size());
       compressed_data.resize(data_offset + compressed_length);
       data_.swap(compressed_data);
     } break;
@@ -349,7 +353,8 @@ void ColumnFileWriter::Impl::FieldWriter::Finalize(
 
       lzma_stream ls = LZMA_STREAM_INIT;
 
-      KJ_REQUIRE(LZMA_OK == lzma_easy_encoder(&ls, 1, LZMA_CHECK_CRC32));
+      if (LZMA_OK != lzma_easy_encoder(&ls, 1, LZMA_CHECK_CRC32))
+        throw ColumnFileException{"lzma_easy_encoder() did not return LZMA_OK"};
 
       ls.next_in = reinterpret_cast<const uint8_t*>(data_.data());
       ls.avail_in = data_.size();
@@ -359,10 +364,12 @@ void ColumnFileWriter::Impl::FieldWriter::Finalize(
       ls.avail_out = compressed_data.size() - data_offset;
 
       const auto code_ret = lzma_code(&ls, LZMA_FINISH);
-      KJ_REQUIRE(LZMA_STREAM_END == code_ret, code_ret);
+      if (LZMA_STREAM_END != code_ret)
+        throw ColumnFileException{
+            "lzma_code(..., LZMA_FINISH) did not return LZMA_STREAM_END"};
 
       const auto compressed_length = ls.total_out;
-      KJ_REQUIRE(data_offset + compressed_length <= compressed_data.size());
+      assert(data_offset + compressed_length <= compressed_data.size());
 
       lzma_end(&ls);
 
@@ -380,7 +387,7 @@ void ColumnFileWriter::Impl::FieldWriter::Finalize(
     } break;
 
     default:
-      KJ_FAIL_REQUIRE("Unknown compression scheme", compression);
+      throw ColumnFileException{"unknown compression scheme"};
   }
 }
 

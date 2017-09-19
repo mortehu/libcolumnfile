@@ -1,8 +1,9 @@
 #include "columnfile-internal.h"
 
+#include <cassert>
 #include <deque>
 
-#include <kj/debug.h>
+#include <kj/common.h>
 #include <zlib.h>
 
 namespace {
@@ -68,8 +69,8 @@ void CompressZLIB(std::string& output, const std::string_view& input) {
       z_stream zs;
       memset(&zs, 0, sizeof(zs));
 
-      KJ_REQUIRE(Z_OK ==
-                 deflateInit2(&zs, 6, Z_DEFLATED, -15, 8, Z_DEFAULT_STRATEGY));
+      if (Z_OK != deflateInit2(&zs, 6, Z_DEFLATED, -15, 8, Z_DEFAULT_STRATEGY))
+        throw ColumnFileException{"deflateInit2() did not return Z_OK"};
       KJ_DEFER(deflateEnd(&zs));
 
       deflateParams(&zs, kCompressionLevel, Z_DEFAULT_STRATEGY);
@@ -86,32 +87,37 @@ void CompressZLIB(std::string& output, const std::string_view& input) {
       zs.avail_out = result.size();
 
       if (finish) {
-        const auto deflate_ret = deflate(&zs, Z_FINISH);
-        KJ_REQUIRE(Z_STREAM_END == deflate_ret, deflate_ret);
+        if (Z_STREAM_END != deflate(&zs, Z_FINISH))
+          throw ColumnFileException{
+              "deflate(..., Z_FINISH) did not return Z_STREAM_END"};
       } else {
-        auto deflate_ret = deflate(&zs, Z_BLOCK);
-        KJ_REQUIRE(Z_OK == deflate_ret, deflate_ret);
+        if (Z_OK != deflate(&zs, Z_BLOCK))
+          throw ColumnFileException{
+              "deflate(..., Z_BLOCK) did not return Z_OK"};
 
         int bits;
         deflatePending(&zs, Z_NULL, &bits);
 
         if (bits & 1) {
-          deflate_ret = deflate(&zs, Z_SYNC_FLUSH);
-          KJ_REQUIRE(Z_OK == deflate_ret, deflate_ret);
+          if (Z_OK != deflate(&zs, Z_SYNC_FLUSH))
+            throw ColumnFileException{
+                "deflate(..., Z_SYNC_FLUSH) did not return Z_OK"};
         } else if (bits & 7) {
           do {
             bits = deflatePrime(&zs, 10, 2);
-            KJ_REQUIRE(bits == Z_OK, bits);
+            if (Z_OK != bits)
+              throw ColumnFileException{"deflatePrime() did not return Z_OK"};
             deflatePending(&zs, Z_NULL, &bits);
           } while (bits & 7);
 
-          deflate_ret = deflate(&zs, Z_BLOCK);
-          KJ_REQUIRE(Z_OK == deflate_ret, deflate_ret);
+          if (Z_OK != deflate(&zs, Z_BLOCK))
+            throw ColumnFileException{
+                "deflate(..., Z_BLOCK) did not return Z_OK"};
         }
       }
 
       const auto compressed_length = zs.total_out;
-      KJ_REQUIRE(compressed_length <= result.size());
+      assert(compressed_length <= result.size());
       result.resize(compressed_length);
 
       const uint32_t block_checksum =

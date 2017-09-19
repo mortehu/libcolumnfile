@@ -12,9 +12,6 @@
 #include <thread>
 #include <vector>
 
-#include <kj/common.h>
-#include <kj/debug.h>
-
 #include "columnfile.h"
 
 namespace cantera {
@@ -47,7 +44,8 @@ inline uint32_t GetUInt(std::string_view& input) {
   if (b < 0x80) goto done;
   b = input.at(0);
   input.remove_prefix(1);
-  KJ_REQUIRE(b <= 0x1f, b);
+  if (b > 0x1f)
+    throw ColumnFileException{"corrupt input: integer out of range"};
   result |= b << 27;
 done:
   return result;

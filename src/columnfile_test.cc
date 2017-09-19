@@ -292,8 +292,8 @@ TEST_F(ColumnFileTest, AFLTestCases) {
       ColumnFileReader reader(
           OpenFile(path.cStr(), std::ios_base::binary | std::ios_base::in));
       while (!reader.End()) reader.GetRow();
-    } catch (kj::Exception& e) {
-      KJ_LOG(INFO, e);
+    } catch (std::runtime_error& e) {
+      fprintf(stderr, "runtime_error: %s\n", e.what());
     } catch (std::bad_alloc&) {
       fprintf(stderr, "bad_alloc\n");
     } catch (std::out_of_range&) {

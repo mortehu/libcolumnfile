@@ -1,11 +1,9 @@
 #include "columnfile.h"
 
+#include <cassert>
 #include <cstring>
 
-#include <fcntl.h>
-#include <unistd.h>
-
-#include <kj/debug.h>
+#include <kj/common.h>
 #include <lz4.h>
 #include <lzma.h>
 #include <snappy.h>
@@ -24,8 +22,10 @@ class ColumnFileStreambufInput : public ColumnFileInput {
   ColumnFileStreambufInput(std::unique_ptr<std::streambuf>&& fd)
       : fd_{std::move(fd)} {
     char magic[sizeof(kMagic)];
-    KJ_REQUIRE(sizeof(kMagic) == fd_->sgetn(magic, sizeof(kMagic)));
-    KJ_REQUIRE(!std::memcmp(magic, kMagic, sizeof(kMagic)));
+    if (sizeof(kMagic) != fd_->sgetn(magic, sizeof(kMagic)))
+      throw ColumnFileException{"sgetn() failed to get magic header bytes"};
+    if (0 != std::memcmp(magic, kMagic, sizeof(kMagic)))
+      throw ColumnFileException{"magic header mismatch"};
     magic_end_ = fd_->pubseekoff(0, std::ios_base::cur);
   }
 
@@ -39,7 +39,8 @@ class ColumnFileStreambufInput : public ColumnFileInput {
   bool End() const override { return end_; }
 
   void SeekToStart() override {
-    KJ_REQUIRE(magic_end_ == fd_->pubseekpos(magic_end_));
+    if (magic_end_ != fd_->pubseekpos(magic_end_))
+      throw ColumnFileException{"seek failed"};
 
     buffer_.clear();
     end_ = false;
@@ -74,8 +75,10 @@ class ColumnFileStreambufInput : public ColumnFileInput {
 class ColumnFileStringInput : public ColumnFileInput {
  public:
   ColumnFileStringInput(std::string_view data) : input_data_(data) {
-    KJ_REQUIRE(input_data_.size() >= sizeof(kMagic));
-    KJ_REQUIRE(!memcmp(input_data_.begin(), kMagic, sizeof(kMagic)));
+    if (input_data_.size() < sizeof(kMagic))
+      throw ColumnFileException{"input is shorter than magic header"};
+    if (0 != memcmp(input_data_.begin(), kMagic, sizeof(kMagic)))
+      throw ColumnFileException{"magic header mismatch"};
     input_data_.remove_prefix(sizeof(kMagic));
 
     data_ = input_data_;
@@ -114,18 +117,15 @@ bool ColumnFileStreambufInput::Next(ColumnFileCompression& compression) {
   const auto ret = fd_->sgetn(reinterpret_cast<char*>(size_buffer), 4);
   if (ret < 4) {
     end_ = true;
-    KJ_REQUIRE(ret == 0);
+    if (ret != 0) throw ColumnFileException{"short read"};
     return false;
   }
 
   const uint32_t size = (size_buffer[0] << 24) | (size_buffer[1] << 16) |
                         (size_buffer[2] << 8) | size_buffer[3];
-  try {
-    buffer_.resize(size);
-  } catch (std::bad_alloc e) {
-    KJ_FAIL_REQUIRE("Buffer allocation failed", size);
-  }
-  KJ_REQUIRE(size == fd_->sgetn(buffer_.data(), size));
+  buffer_.resize(size);
+  if (size != fd_->sgetn(buffer_.data(), size))
+    throw ColumnFileException{"sgetn() failed to read segment metadata"};
 
   std::string_view data{buffer_.data(), buffer_.size()};
 
@@ -158,7 +158,8 @@ ColumnFileStreambufInput::Fill(
 
     for (const auto& f : field_meta_) offset -= f.size;
 
-    KJ_REQUIRE(-1 != fd_->pubseekoff(offset, std::ios_base::cur));
+    if (-1 == fd_->pubseekoff(offset, std::ios_base::cur))
+      throw ColumnFileException{"seek failed"};
   }
 
   // Number of bytes to seek before next read.  The purpose of having this
@@ -174,18 +175,21 @@ ColumnFileStreambufInput::Fill(
     }
 
     if (skip_amount > 0) {
-      KJ_REQUIRE(-1 != fd_->pubseekoff(skip_amount, std::ios_base::cur));
+      if (-1 == fd_->pubseekoff(skip_amount, std::ios_base::cur))
+        throw ColumnFileException{"seek failed"};
       skip_amount = 0;
     }
 
     Buffer buffer(f.size);
-    KJ_REQUIRE(f.size == fd_->sgetn(buffer.data(), f.size));
+    if (f.size != fd_->sgetn(buffer.data(), f.size))
+      throw ColumnFileException{"sgetn() failed to read segment"};
 
     result.emplace_back(f.index, std::move(buffer));
   }
 
   if (skip_amount > 0) {
-    KJ_REQUIRE(-1 != fd_->pubseekoff(skip_amount, std::ios_base::cur));
+    if (-1 == fd_->pubseekoff(skip_amount, std::ios_base::cur))
+      throw ColumnFileException{"seek failed"};
   }
 
   at_field_end_ = true;
@@ -194,7 +198,7 @@ ColumnFileStreambufInput::Fill(
 }
 
 bool ColumnFileStringInput::Next(ColumnFileCompression& compression) {
-  KJ_REQUIRE(!data_.empty());
+  if (data_.size() < 4) throw ColumnFileException{"unexpected end of data"};
 
   data_.remove_prefix(4);  // Skip header size we don't need.
 
@@ -288,9 +292,9 @@ struct ColumnFileReader::Impl {
 
     const std::string_view* Peek() {
       if (!repeat_) {
-        KJ_ASSERT(!data_.empty());
+        assert(!data_.empty());
         Fill();
-        KJ_ASSERT(repeat_ > 0);
+        assert(repeat_ > 0);
       }
 
       return value_is_null_ ? nullptr : &value_;
@@ -393,10 +397,7 @@ const std::string_view* ColumnFileReader::Peek(uint32_t field) {
 
   if (pimpl_->fields.empty()) Fill();
 
-  auto i = pimpl_->fields.find(field);
-  KJ_REQUIRE(i != pimpl_->fields.end(), "Missing field", field);
-
-  return i->second.Peek();
+  return pimpl_->fields.at(field).Peek();
 }
 
 const std::string_view* ColumnFileReader::Get(uint32_t field) {
@@ -409,10 +410,7 @@ const std::string_view* ColumnFileReader::Get(uint32_t field) {
 
   if (pimpl_->fields.empty()) Fill();
 
-  auto i = pimpl_->fields.find(field);
-  KJ_REQUIRE(i != pimpl_->fields.end(), "Missing field", field);
-
-  return i->second.Get();
+  return pimpl_->fields.at(field).Get();
 }
 
 const std::vector<std::pair<uint32_t, optional_string_view>>&
@@ -477,12 +475,14 @@ void ColumnFileReader::Impl::FieldReader::Fill() {
 
     case kColumnFileCompressionSnappy: {
       size_t decompressed_size = 0;
-      KJ_REQUIRE(snappy::GetUncompressedLength(data_.data(), data_.size(),
-                                               &decompressed_size));
+      if (!snappy::GetUncompressedLength(data_.data(), data_.size(),
+                                         &decompressed_size))
+        throw ColumnFileException{"snappy::GetUncompressedLength() failed"};
 
       ColumnFileInput::Buffer decompressed_data{decompressed_size};
-      KJ_REQUIRE(snappy::RawUncompress(data_.data(), data_.size(),
-                                       decompressed_data.data()));
+      if (!snappy::RawUncompress(data_.data(), data_.size(),
+                                 decompressed_data.data()))
+        throw ColumnFileException{"snappy::RawUncompress() failed"};
       buffer_ = std::move(decompressed_data);
       data_ = std::string_view{buffer_.data(), buffer_.size()};
       compression_ = kColumnFileCompressionNone;
@@ -496,8 +496,8 @@ void ColumnFileReader::Impl::FieldReader::Fill() {
       auto decompress_result =
           LZ4_decompress_safe(input.data(), decompressed_data.data(),
                               input.size(), decompressed_size);
-      KJ_REQUIRE(decompress_result == static_cast<int>(decompressed_size),
-                 decompress_result, decompressed_size);
+      if (decompress_result != static_cast<int>(decompressed_size))
+        throw ColumnFileException{"LZ4: decompressed length mismatch"};
 
       buffer_ = std::move(decompressed_data);
       data_ = std::string_view{buffer_.data(), buffer_.size()};
@@ -512,7 +512,8 @@ void ColumnFileReader::Impl::FieldReader::Fill() {
 
       lzma_stream ls = LZMA_STREAM_INIT;
 
-      KJ_REQUIRE(LZMA_OK == lzma_stream_decoder(&ls, UINT64_MAX, 0));
+      if (LZMA_OK != lzma_stream_decoder(&ls, UINT64_MAX, 0))
+        throw ColumnFileException{"lzma_stream_decoder() failed"};
 
       ls.next_in = reinterpret_cast<const uint8_t*>(input.data());
       ls.avail_in = input.size();
@@ -522,10 +523,11 @@ void ColumnFileReader::Impl::FieldReader::Fill() {
       ls.avail_out = decompressed_size;
 
       const auto code_ret = lzma_code(&ls, LZMA_FINISH);
-      KJ_REQUIRE(LZMA_STREAM_END == code_ret, code_ret);
+      if (LZMA_STREAM_END != code_ret)
+        throw ColumnFileException{"lzma_code() did not return LZMA_STREAM_END"};
 
-      KJ_REQUIRE(ls.total_out == decompressed_size, ls.total_out,
-                 decompressed_size);
+      if (ls.total_out != decompressed_size)
+        throw ColumnFileException{"LZMA: decompressed length mismatch"};
 
       buffer_ = std::move(decompressed_data);
       data_ = std::string_view{buffer_.data(), buffer_.size()};
@@ -541,8 +543,9 @@ void ColumnFileReader::Impl::FieldReader::Fill() {
       z_stream zs;
       memset(&zs, 0, sizeof(zs));
 
-      KJ_REQUIRE(Z_OK == inflateInit(&zs));
-      KJ_DEFER(KJ_REQUIRE(Z_OK == inflateEnd(&zs)));
+      if (Z_OK != inflateInit(&zs))
+        throw ColumnFileException{"inflateInit() failed"};
+      KJ_DEFER(inflateEnd(&zs));
 
       zs.next_in = reinterpret_cast<Bytef*>(const_cast<char*>(input.data()));
       zs.avail_in = input.size();
@@ -552,11 +555,11 @@ void ColumnFileReader::Impl::FieldReader::Fill() {
       zs.avail_out = decompressed_size;
 
       const auto inflate_ret = inflate(&zs, Z_FINISH);
-      KJ_REQUIRE(Z_STREAM_END == inflate_ret, inflate_ret, zs.avail_in,
-                 zs.total_in, zs.msg);
+      if (Z_STREAM_END != inflate_ret)
+        throw ColumnFileException{"inflate() did not return Z_STREAM_END"};
 
-      KJ_REQUIRE(zs.total_out == decompressed_size, zs.total_out,
-                 decompressed_size);
+      if (zs.total_out != decompressed_size)
+        throw ColumnFileException{"deflate: decompressed length mismatch"};
 
       buffer_ = std::move(decompressed_data);
       data_ = std::string_view{buffer_.data(), buffer_.size()};
@@ -564,14 +567,15 @@ void ColumnFileReader::Impl::FieldReader::Fill() {
     } break;
 
     default:
-      KJ_FAIL_REQUIRE("Unknown compression scheme", compression_);
+      throw ColumnFileException{"unknown compression scheme"};
   }
 
   if (!repeat_) {
     repeat_ = GetUInt(data_);
 
     const auto reserved = GetUInt(data_);
-    KJ_REQUIRE(reserved == 0, reserved);
+    if (reserved != 0)
+      throw ColumnFileException{"incompatible format: reserved value not zero"};
 
     auto b0 = static_cast<uint8_t>(data_[0]);
 
@@ -587,8 +591,9 @@ void ColumnFileReader::Impl::FieldReader::Fill() {
 
         // Verify that the shared prefix isn't longer than the data we've
         // consumed so far.  If it is, the input is corrupt.
-        KJ_REQUIRE(shared_prefix <= value_.size(), shared_prefix,
-                   value_.size());
+        if (shared_prefix > value_.size())
+          throw ColumnFileException{
+              "corrupt input: shared prefix longer than previous value"};
 
         // We just move the old prefix in front of the new suffix, corrupting
         // whatever data is there; we're not going to read it again anyway.
@@ -616,7 +621,7 @@ void ColumnFileReader::Fill(bool next) {
 
   auto&& fields = pimpl_->input->Fill(pimpl_->column_filter);
 
-  KJ_ASSERT(!fields.empty());
+  if (fields.empty()) throw ColumnFileException{"no data in segment"};
 
   if (pimpl_->compression == kColumnFileCompressionLZMA) {
     std::vector<std::pair<uint32_t, std::future<Impl::FieldReader>>>

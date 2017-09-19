@@ -83,6 +83,10 @@ enum ColumnFileCompression : uint32_t {
   kColumnFileCompressionDefault = kColumnFileCompressionLZ4
 };
 
+struct ColumnFileException : public std::runtime_error {
+  ColumnFileException(const std::string& e) : std::runtime_error{e} {}
+};
+
 // Interface used to implement new column file storage methods.
 class ColumnFileOutput {
  public:

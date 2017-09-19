@@ -1,9 +1,9 @@
 #include "columnfile.h"
 
 #include <algorithm>
+#include <cassert>
 
 #include <kj/arena.h>
-#include <kj/debug.h>
 
 namespace cantera {
 
@@ -116,12 +116,12 @@ void ColumnFileSelect::ReadChunk() {
           // Is row already filtered?
           if (row_idx < in->index) continue;
 
-          KJ_ASSERT(in->index == row_idx);
+          assert(in->index == row_idx);
         }
 
         optional_string_view value = std::nullopt;
         if (row.size() == 1) {
-          KJ_ASSERT(row[0].first == field, row[0].first, field);
+          assert(row[0].first == field);
           value = row[0].second;
         }
 
@@ -172,7 +172,7 @@ void ColumnFileSelect::ReadChunk() {
     } while (!pimpl_->row_buffer.empty() &&
              filter_idx < pimpl_->filters.size());
 
-    // Now rows passing filter in current chunk, read next one.
+    // No rows passing filter in current chunk, read next one.
     if (pimpl_->row_buffer.empty()) continue;
 
     if (!pimpl_->unfiltered_selection.empty()) {
@@ -189,7 +189,7 @@ void ColumnFileSelect::ReadChunk() {
 
         if (row_idx < sr->index) continue;
 
-        KJ_REQUIRE(row_idx == sr->index, row_idx, sr->index);
+        assert(row_idx == sr->index);
 
         for (const auto& d : row) {
           const auto& value = d.second;
