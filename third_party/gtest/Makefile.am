@@ -1,4 +1,4 @@
-noinst_LIBRARIES += third_party/gtest/libgtest.a
+check_LIBRARIES += third_party/gtest/libgtest.a
 
 third_party_gtest_libgtest_a_SOURCES = \
   third_party/gtest/gtest-death-test.h \

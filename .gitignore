@@ -23,6 +23,8 @@
 /Makefile.in
 /aclocal.m4
 /ar-lib
+/columnfile-cat
+/columnfile-sort
 /compile
 /config.guess
 /config.h

@@ -1,7 +1,9 @@
 noinst_LIBRARIES =
+check_LIBRARIES =
 lib_LTLIBRARIES = libcolumnfile.la
 check_PROGRAMS = src/columnfile_test
 include_HEADERS = src/columnfile.h src/columnfile-capnp.h
+bin_PROGRAMS = columnfile-cat columnfile-sort
 
 pkgconfigdir = $(libdir)/pkgconfig
 pkgconfig_DATA = libcolumnfile.pc
@@ -11,12 +13,13 @@ TESTS = $(check_PROGRAMS)
 ACLOCAL_AMFLAGS = -I m4
 
 AM_CPPFLAGS = \
+  -I src \
   $(CAPNP_CFLAGS) \
   $(LIBLZ4_CFLAGS) \
   $(LIBLZMA_CFLAGS) \
   $(ZLIB_CFLAGS)
 AM_LDFLAGS = -lpthread
-AM_CXXFLAGS = -Wall -std=c++17
+AM_CXXFLAGS = -Wall -std=c++17 -O3 -g -DNDEBUG
 
 include third_party/gtest/Makefile.am
 
@@ -26,7 +29,8 @@ libcolumnfile_la_SOURCES = \
   src/columnfile-reader.cc \
   src/columnfile-select.cc \
   src/columnfile-writer.cc \
-  src/zlib-parallel.cc
+  src/zlib-parallel.cc \
+  src/semaphore.h
 libcolumnfile_la_LIBADD = \
   $(CAPNP_LIBS) \
   $(LIBLZ4_LIBS) \
@@ -44,7 +48,7 @@ libcolumnfile_la_LIBADD = \
 #      increment age.
 #   4. If any interfaces have been removed or changed since the last public
 #      release, then set age to 0.
-libcolumnfile_la_LDFLAGS = -no-undefined -version-info 1:0:0 -release 1.2.0
+libcolumnfile_la_LDFLAGS = -no-undefined -version-info 1:0:0 -release 1.2.1
 
 src_columnfile_test_SOURCES = \
   src/columnfile_test.cc 
@@ -53,6 +57,12 @@ src_columnfile_test_LDADD = \
   third_party/gtest/libgtest.a \
   -lcapnpc \
   $(CAPNP_LIBS)
+
+columnfile_cat_SOURCES = tools/columnfile-cat.cc
+columnfile_cat_LDADD = libcolumnfile.la $(CAPNP_LIBS)
+
+columnfile_sort_SOURCES = tools/columnfile-sort.cc
+columnfile_sort_LDADD = libcolumnfile.la $(CAPNP_LIBS)
 
 EXTRA_DIST = \
   LICENSE \
@@ -89,4 +99,12 @@ EXTRA_DIST = \
   testdata/006019.col testdata/006222.col \
   testdata/006966.col testdata/007437.col \
   testdata/008330.col testdata/009100.col \
-  testdata/addressbook.capnp
+  testdata/addressbook.capnp \
+  third_party/README.md \
+  third_party/gtest/CMakeLists.txt \
+  third_party/gtest/cmake/internal_utils.cmake \
+  third_party/gtest/gtest-param-test.h.pump \
+  third_party/gtest/internal/gtest-param-util-generated.h.pump \
+  third_party/gtest/internal/gtest-tuple.h.pump \
+  third_party/gtest/internal/gtest-type-util.h.pump \
+  third_party/gtest/src/gtest-all.cc

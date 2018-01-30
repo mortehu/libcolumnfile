@@ -18,3 +18,9 @@ Architecture: any
 Depends: ${shlibs:Depends}, ${misc:Depends}
 Description: Columnar file library
  Columnar files
+
+Package: libcolumnfile-tools
+Architecture: any
+Depends: ${shlibs:Depends}, ${misc:Depends}
+Description: Columnar file library tools
+ Columnar files tools

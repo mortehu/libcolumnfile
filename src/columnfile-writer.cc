@@ -143,6 +143,35 @@ struct ColumnFileWriter::Impl {
   std::map<uint32_t, FieldWriter> fields;
 
   size_t pending_size = 0;
+
+template <typename T>
+void PutRow(const T& row) {
+  // We iterate simultaneously through the impl.fields map and the row, so
+  // that if their keys matches, we don't have to perform any binary searches
+  // in the map.
+  auto field_it = fields.begin();
+  auto row_it = row.begin();
+
+  while (row_it != row.end()) {
+    if (field_it == fields.end() || field_it->first != row_it->first) {
+      field_it = fields.find(row_it->first);
+      if (field_it == fields.end())
+        field_it =
+            fields.emplace(row_it->first, ColumnFileWriter::Impl::FieldWriter{}).first;
+    }
+
+    if (!row_it->second) {
+      field_it->second.PutNull();
+    } else {
+      const auto& str = row_it->second.value();
+      field_it->second.Put(str);
+      pending_size += str.size();
+    }
+
+    ++row_it;
+    ++field_it;
+  }
+}
 };
 
 ColumnFileCompression ColumnFileWriter::StringToCompressingAlgorithm(
@@ -196,31 +225,7 @@ void ColumnFileWriter::PutNull(uint32_t column) {
 
 void ColumnFileWriter::PutRow(
     const std::vector<std::pair<uint32_t, optional_string_view>>& row) {
-  // We iterate simultaneously through the pimpl_->fields map and the row, so
-  // that if their keys matches, we don't have to perform any binary searches
-  // in the map.
-  auto field_it = pimpl_->fields.begin();
-  auto row_it = row.begin();
-
-  while (row_it != row.end()) {
-    if (field_it == pimpl_->fields.end() || field_it->first != row_it->first) {
-      field_it = pimpl_->fields.find(row_it->first);
-      if (field_it == pimpl_->fields.end())
-        field_it =
-            pimpl_->fields.emplace(row_it->first, Impl::FieldWriter{}).first;
-    }
-
-    if (!row_it->second) {
-      field_it->second.PutNull();
-    } else {
-      const auto& str = row_it->second.value();
-      field_it->second.Put(str);
-      pimpl_->pending_size += str.size();
-    }
-
-    ++row_it;
-    ++field_it;
-  }
+  pimpl_->PutRow(row);
 }
 
 size_t ColumnFileWriter::PendingSize() const { return pimpl_->pending_size; }
